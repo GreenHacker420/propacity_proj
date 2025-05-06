@@ -1,18 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { DocumentTextIcon, ChartPieIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, ChartPieIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import ConfirmationDialog from './ConfirmationDialog';
 
 /**
  * Header component with navigation buttons
  */
-const Header = ({ 
-  hasData, 
-  activeView, 
-  setActiveView, 
-  hasSummary, 
-  onDownloadPDF, 
-  loading 
+const Header = ({
+  hasData,
+  activeView,
+  setActiveView,
+  hasSummary,
+  onDownloadPDF,
+  onReset,
+  loading
 }) => {
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   return (
     <motion.header
       className="flex justify-between items-center mb-8"
@@ -20,7 +23,22 @@ const Header = ({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <h1 className="text-3xl font-bold text-gray-900">Product Review Analyzer</h1>
+      <div className="flex items-center">
+        {hasData && (
+          <motion.button
+            className="mr-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+            onClick={() => setShowConfirmDialog(true)}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            title="Back to input"
+          >
+            <ArrowLeftIcon className="w-5 h-5 text-gray-700" />
+          </motion.button>
+        )}
+        <h1 className="text-3xl font-bold text-gray-900">Product Review Analyzer</h1>
+      </div>
 
       {hasData && (
         <motion.div
@@ -54,6 +72,17 @@ const Header = ({
           )}
         </motion.div>
       )}
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={showConfirmDialog}
+        onClose={() => setShowConfirmDialog(false)}
+        onConfirm={onReset}
+        title="Return to Input"
+        message="Are you sure you want to go back? Your current analysis data will be lost."
+        confirmText="Yes, go back"
+        cancelText="Cancel"
+      />
     </motion.header>
   );
 };

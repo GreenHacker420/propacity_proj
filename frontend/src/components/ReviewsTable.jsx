@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 
 /**
  * Component for displaying analyzed reviews in a table
  */
 const ReviewsTable = ({ reviews }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const itemsPerPage = 10;
+
   if (!reviews || reviews.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -12,6 +17,50 @@ const ReviewsTable = ({ reviews }) => {
       </div>
     );
   }
+
+  // Filter reviews based on search term
+  const filteredReviews = reviews.filter(review =>
+    review.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    review.game.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Sort reviews
+  const sortedReviews = [...filteredReviews].sort((a, b) => {
+    if (!sortConfig.key) return 0;
+    
+    const aValue = a[sortConfig.key];
+    const bValue = b[sortConfig.key];
+    
+    if (sortConfig.direction === 'asc') {
+      return aValue > bValue ? 1 : -1;
+    } else {
+      return aValue < bValue ? 1 : -1;
+    }
+  });
+
+  // Calculate pagination
+  const totalPages = Math.ceil(sortedReviews.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedReviews = sortedReviews.slice(startIndex, startIndex + itemsPerPage);
+
+  // Handle sort
+  const handleSort = (key) => {
+    const direction = sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc';
+    setSortConfig({ key, direction });
+  };
+
+  // Get sort indicator
+  const getSortIndicator = (key) => {
+    if (sortConfig.key !== key) return '↕';
+    return sortConfig.direction === 'asc' ? '↑' : '↓';
+  };
+
+  // Get sentiment color
+  const getSentimentColor = (score) => {
+    if (score >= 0.05) return 'text-green-600';
+    if (score <= -0.05) return 'text-red-600';
+    return 'text-gray-600';
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -31,7 +80,7 @@ const ReviewsTable = ({ reviews }) => {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200">
-          {reviews.map((review, index) => (
+          {paginatedReviews.map((review, index) => (
             <motion.tr
               key={index}
               initial={{ opacity: 0, y: 20 }}
@@ -76,6 +125,29 @@ const ReviewsTable = ({ reviews }) => {
           ))}
         </tbody>
       </table>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center mt-4 px-4">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-gray-700">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 };

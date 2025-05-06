@@ -52,10 +52,10 @@ async def get_estimated_time(
 async def get_processing_time_history(
     operation: Optional[str] = None,
     limit: int = 100,
-    _: dict = Depends(get_current_active_user)  # For authentication only
+    current_user: Optional[dict] = Depends(get_current_active_user)
 ):
     """
-    Get processing time history (requires authentication)
+    Get processing time history
     """
     try:
         results = mongo_timing_service.get_all_processing_times(operation, limit)

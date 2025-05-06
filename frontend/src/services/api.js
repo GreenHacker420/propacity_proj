@@ -2,47 +2,101 @@ import axios from 'axios';
 
 // Configure axios base URL to match the backend server port
 axios.defaults.baseURL = 'http://localhost:8000';
+axios.defaults.withCredentials = true;
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+
+// API status tracking
+let apiStatus = {
+  error: null,
+  lastErrorTime: null,
+  quotaExceeded: false,
+  retryAfter: null
+};
+
+// Intercept responses to track API status
+axios.interceptors.response.use(
+  response => {
+    // Clear error state on successful response
+    apiStatus.error = null;
+    apiStatus.quotaExceeded = false;
+    return response;
+  },
+  error => {
+    // Track API errors
+    if (error.response) {
+      apiStatus.error = error.response.data.detail || error.message;
+      apiStatus.lastErrorTime = new Date();
+
+      // Check for quota exceeded errors
+      if (error.response.status === 429 ||
+          (error.response.data.detail && error.response.data.detail.includes('quota'))) {
+        apiStatus.quotaExceeded = true;
+
+        // Try to extract retry-after header or from error message
+        const retryAfter = error.response.headers['retry-after'];
+        if (retryAfter) {
+          apiStatus.retryAfter = parseInt(retryAfter);
+        } else if (error.response.data.detail && error.response.data.detail.includes('retry_delay')) {
+          // Try to extract from error message
+          const match = error.response.data.detail.match(/seconds":\s*(\d+)/);
+          if (match && match[1]) {
+            apiStatus.retryAfter = parseInt(match[1]);
+          }
+        }
+      }
+    } else {
+      apiStatus.error = error.message;
+      apiStatus.lastErrorTime = new Date();
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 // API service for handling all backend requests
 const api = {
+  // Get current API status
+  getApiStatus: () => {
+    return { ...apiStatus };
+  },
   // Upload and analyze a CSV file
   uploadFile: async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     const response = await axios.post('/api/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     });
-    
+
     return response.data;
   },
-  
+
   // Scrape and analyze data from online sources
   scrapeData: async (source, query, limit) => {
     const params = {
       source,
       limit
     };
-    
+
     // Add query or app_id based on the source
     if (source === 'twitter') {
       params.query = query;
     } else if (source === 'playstore') {
       params.app_id = query;
     }
-    
+
     const response = await axios.get('/api/scrape', { params });
     return response.data;
   },
-  
+
   // Analyze GitHub repository
   analyzeGitHub: async (url) => {
     // This is a placeholder for the actual GitHub analysis API
     // For now, we'll simulate the API call with mock data
     await new Promise(resolve => setTimeout(resolve, 3000));
-    
+
     // Create mock data for GitHub analysis
     const mockGitHubData = {
       issues: [
@@ -55,7 +109,7 @@ const api = {
         { id: 2, title: "Performance improvements", body: "We should focus on improving load times for the dashboard" }
       ]
     };
-    
+
     // Create mock analyzed reviews from GitHub data
     const mockAnalyzedReviews = mockGitHubData.issues.map(issue => ({
       text: issue.body,
@@ -67,31 +121,31 @@ const api = {
       source: "github",
       issue_title: issue.title
     }));
-    
+
     return {
       repoData: mockGitHubData,
       analyzedReviews: mockAnalyzedReviews
     };
   },
-  
+
   // Perform sentiment analysis on a batch of texts
   analyzeSentiment: async (texts) => {
     const response = await axios.post('/api/sentiment/batch', { texts });
     return response.data;
   },
-  
+
   // Generate summary from analyzed reviews
   generateSummary: async (reviewsData) => {
     const response = await axios.post('/api/summary', reviewsData);
     return response.data;
   },
-  
+
   // Record processing time
   recordProcessingTime: async (operation, startTime, recordCount, fileName = null, source = null, query = null) => {
     // Calculate duration in seconds
     const endTime = Date.now();
     const durationSeconds = (endTime - startTime) / 1000;
-    
+
     await axios.post('/api/timing/record', {
       operation,
       file_name: fileName,
@@ -100,16 +154,16 @@ const api = {
       record_count: recordCount,
       duration_seconds: durationSeconds
     });
-    
+
     return durationSeconds;
   },
-  
+
   // Get estimated processing time
   getEstimatedTime: async (operation, recordCount) => {
     const response = await axios.get(`/api/timing/estimate/${operation}?record_count=${recordCount}`);
     return response.data;
   },
-  
+
   // Record analysis history
   recordAnalysisHistory: async (sourceType, sourceName, reviewsData, summary) => {
     await axios.post('/api/history', {
@@ -123,13 +177,13 @@ const api = {
       summary: summary
     });
   },
-  
+
   // Download PDF report
   downloadPDF: async (analyzedReviews) => {
     const response = await axios.post('/api/summary/pdf', analyzedReviews, {
       responseType: 'blob'
     });
-    
+
     // Create a download link for the PDF
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');

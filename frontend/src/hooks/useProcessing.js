@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 // Default processing steps
@@ -51,6 +51,15 @@ const useProcessing = (initialRecordCount = 50) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [estimatedTime, setEstimatedTime] = useState(null);
   const [recordCount, setRecordCount] = useState(initialRecordCount);
+  const [apiStatus, setApiStatus] = useState(null);
+
+  // Check API status
+  const checkApiStatus = useCallback(() => {
+    const status = api.getApiStatus();
+    if (status.error) {
+      setApiStatus(status);
+    }
+  }, []);
 
   // Update estimated time when processing step changes
   useEffect(() => {
@@ -59,24 +68,36 @@ const useProcessing = (initialRecordCount = 50) => {
     }
   }, [loading, processingStep, recordCount]);
 
+  // Check API status periodically when loading
+  useEffect(() => {
+    if (loading) {
+      // Check immediately
+      checkApiStatus();
+
+      // Then check every 2 seconds
+      const interval = setInterval(checkApiStatus, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [loading, checkApiStatus]);
+
   // Get estimated time from the backend
   const updateEstimatedTime = async () => {
     const operation = operationTypes[processingStep];
-    
+
     if (operation) {
       try {
         const timeEstimate = await api.getEstimatedTime(operation, recordCount);
         setEstimatedTime(timeEstimate.estimated_seconds);
-        
+
         // Update the processingSteps with the new estimated time
         const updatedSteps = [...processingSteps];
-        updatedSteps[processingStep].estimatedTime = 
+        updatedSteps[processingStep].estimatedTime =
           `${Math.floor(timeEstimate.estimated_seconds)} seconds`;
-        
+
         setProcessingSteps(updatedSteps);
       } catch (error) {
         console.error("Error getting time estimate:", error);
-        
+
         // Fall back to static estimates if API call fails
         const currentStepTime = processingSteps[processingStep].estimatedTime;
         const timeRange = currentStepTime.split('-');
@@ -104,7 +125,7 @@ const useProcessing = (initialRecordCount = 50) => {
         return prev + increment;
       });
     }, intervalTime);
-    
+
     return interval;
   };
 
@@ -121,6 +142,17 @@ const useProcessing = (initialRecordCount = 50) => {
     setError(null);
   };
 
+  // Clear API status
+  const clearApiStatus = () => {
+    setApiStatus(null);
+  };
+
+  // Reset processing state
+  const resetProcessingWithStatus = () => {
+    resetProcessing();
+    clearApiStatus();
+  };
+
   return {
     loading,
     setLoading,
@@ -134,7 +166,10 @@ const useProcessing = (initialRecordCount = 50) => {
     setRecordCount,
     startProgressSimulation,
     completeProgress,
-    resetProcessing
+    resetProcessing: resetProcessingWithStatus,
+    apiStatus,
+    clearApiStatus,
+    checkApiStatus
   };
 };
 

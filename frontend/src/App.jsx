@@ -14,6 +14,8 @@ import ErrorMessage from './components/ErrorMessage';
 import ReviewsTable from './components/ReviewsTable';
 import SummaryView from './components/SummaryView';
 import GitHubDetails from './components/GitHubDetails';
+import APIStatusIndicator from './components/APIStatusIndicator';
+import APIQuotaDisplay from './components/APIQuotaDisplay';
 
 /**
  * Main App component
@@ -27,7 +29,9 @@ function App() {
     processingStep,
     processingSteps,
     uploadProgress,
-    estimatedTime
+    estimatedTime,
+    apiStatus,
+    clearApiStatus
   } = processingHook;
 
   // Initialize data processing hook
@@ -40,7 +44,8 @@ function App() {
     processFileUpload,
     processScraping,
     processGitHubAnalysis,
-    downloadPDF
+    downloadPDF,
+    resetData
   } = dataHook;
 
   // GitHub state
@@ -50,7 +55,18 @@ function App() {
   // Handle GitHub analysis with URL tracking
   const handleGitHubAnalysis = async (url) => {
     setRepoUrl(url);
-    await processGitHubAnalysis(url);
+    const result = await processGitHubAnalysis(url);
+    if (result && result.repoData) {
+      setRepoData(result.repoData);
+    }
+  };
+
+  // Reset all data and return to input screen
+  const handleReset = () => {
+    resetData();
+    setRepoUrl('');
+    setRepoData(null);
+    clearApiStatus();
   };
 
   return (
@@ -64,6 +80,7 @@ function App() {
             setActiveView={setActiveView}
             hasSummary={summary !== null}
             onDownloadPDF={downloadPDF}
+            onReset={handleReset}
             loading={loading}
           />
 
@@ -82,7 +99,12 @@ function App() {
                   <div className="flex justify-center mb-4">
                     <LoadingIndicator type="beat" size={30} text="Processing..." />
                   </div>
-                  <ProcessingSteps steps={processingSteps} currentStep={processingStep} />
+                  <ProcessingSteps
+                    steps={processingSteps}
+                    currentStep={processingStep}
+                    apiStatus={apiStatus}
+                    onClearApiStatus={clearApiStatus}
+                  />
                   {estimatedTime && (
                     <p className="text-sm text-gray-600 mt-4 text-center">
                       Estimated time remaining: ~{Math.round(estimatedTime)} seconds
@@ -106,6 +128,21 @@ function App() {
 
           {/* Error Message */}
           <ErrorMessage error={error} />
+
+          {/* API Status Indicator - Show when not in processing view but API has errors */}
+          {!loading && apiStatus && apiStatus.error && (
+            <div className="mt-4">
+              {apiStatus.error.includes('quota') ? (
+                <APIQuotaDisplay apiStatus={apiStatus} />
+              ) : (
+                <APIStatusIndicator
+                  apiStatus={apiStatus}
+                  onClose={clearApiStatus}
+                  showDetails={true}
+                />
+              )}
+            </div>
+          )}
 
           {/* Reviews View */}
           <AnimatePresence>

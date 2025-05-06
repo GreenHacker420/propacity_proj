@@ -51,7 +51,8 @@ async def get_analysis_history(
 
 @router.get("/{analysis_id}", response_model=AnalysisHistoryResponse)
 async def get_analysis_by_id(
-    analysis_id: str
+    analysis_id: str,
+    current_user: Optional[dict] = Depends(get_current_active_user)
 ):
     """
     Get a specific analysis history record by ID
@@ -70,7 +71,7 @@ async def get_analysis_by_id(
 @router.delete("/{analysis_id}", response_model=bool)
 async def delete_analysis(
     analysis_id: str,
-    current_user: dict = Depends(get_current_active_user)
+    current_user: Optional[dict] = Depends(get_current_active_user)
 ):
     """
     Delete an analysis history record (requires authentication)
@@ -82,7 +83,7 @@ async def delete_analysis(
             raise HTTPException(status_code=404, detail="Analysis history not found")
 
         # Check if the user is authorized to delete this analysis
-        if db_history.get("user_id") != str(current_user["_id"]):
+        if current_user and db_history.get("user_id") != str(current_user["_id"]):
             raise HTTPException(status_code=403, detail="Not authorized to delete this analysis")
 
         return mongo_history_service.delete_analysis(analysis_id)

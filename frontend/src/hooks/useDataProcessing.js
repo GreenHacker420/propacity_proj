@@ -57,9 +57,9 @@ const useDataProcessing = (processingHook) => {
 
       // Record sentiment analysis processing time
       await api.recordProcessingTime(
-        'sentiment_analysis', 
-        sentimentStartTime, 
-        response.length, 
+        'sentiment_analysis',
+        sentimentStartTime,
+        response.length,
         file.name
       );
 
@@ -74,9 +74,9 @@ const useDataProcessing = (processingHook) => {
       const categorizationStartTime = Date.now();
       await new Promise(resolve => setTimeout(resolve, 1000));
       await api.recordProcessingTime(
-        'categorization', 
-        categorizationStartTime, 
-        response.length, 
+        'categorization',
+        categorizationStartTime,
+        response.length,
         file.name
       );
 
@@ -85,9 +85,9 @@ const useDataProcessing = (processingHook) => {
       const keywordStartTime = Date.now();
       await new Promise(resolve => setTimeout(resolve, 1000));
       await api.recordProcessingTime(
-        'keyword_extraction', 
-        keywordStartTime, 
-        response.length, 
+        'keyword_extraction',
+        keywordStartTime,
+        response.length,
         file.name
       );
 
@@ -137,11 +137,11 @@ const useDataProcessing = (processingHook) => {
 
       // Record scrape processing time
       await api.recordProcessingTime(
-        'scrape', 
-        scrapeStartTime, 
-        response.length, 
-        null, 
-        source, 
+        'scrape',
+        scrapeStartTime,
+        response.length,
+        null,
+        source,
         query
       );
 
@@ -152,11 +152,11 @@ const useDataProcessing = (processingHook) => {
         response.map(review => review.text)
       );
       await api.recordProcessingTime(
-        'sentiment_analysis', 
-        sentimentStartTime, 
-        response.length, 
-        null, 
-        source, 
+        'sentiment_analysis',
+        sentimentStartTime,
+        response.length,
+        null,
+        source,
         query
       );
 
@@ -171,11 +171,11 @@ const useDataProcessing = (processingHook) => {
       const categorizationStartTime = Date.now();
       await new Promise(resolve => setTimeout(resolve, 1000));
       await api.recordProcessingTime(
-        'categorization', 
-        categorizationStartTime, 
-        response.length, 
-        null, 
-        source, 
+        'categorization',
+        categorizationStartTime,
+        response.length,
+        null,
+        source,
         query
       );
 
@@ -183,11 +183,11 @@ const useDataProcessing = (processingHook) => {
       const keywordStartTime = Date.now();
       await new Promise(resolve => setTimeout(resolve, 1000));
       await api.recordProcessingTime(
-        'keyword_extraction', 
-        keywordStartTime, 
-        response.length, 
-        null, 
-        source, 
+        'keyword_extraction',
+        keywordStartTime,
+        response.length,
+        null,
+        source,
         query
       );
 
@@ -213,6 +213,8 @@ const useDataProcessing = (processingHook) => {
 
   // Process GitHub repository analysis
   const processGitHubAnalysis = async (url) => {
+    let result = null;
+
     try {
       setLoading(true);
       setError(null);
@@ -222,7 +224,11 @@ const useDataProcessing = (processingHook) => {
       const fetchInterval = startProgressSimulation(150, 2);
 
       // Analyze GitHub repository
-      const { repoData, analyzedReviews: githubReviews } = await api.analyzeGitHub(url);
+      const response = await api.analyzeGitHub(url);
+      const { repoData, analyzedReviews: githubReviews } = response;
+
+      // Save the result to return
+      result = { repoData, analyzedReviews: githubReviews };
 
       // Clear interval and complete progress
       clearInterval(fetchInterval);
@@ -246,9 +252,12 @@ const useDataProcessing = (processingHook) => {
 
       // Switch to the summary view
       setActiveView('summary');
+
+      return result;
     } catch (err) {
       console.error('GitHub analysis error:', err);
       setError('Error analyzing GitHub repository');
+      return null;
     } finally {
       resetProcessing();
     }
@@ -293,6 +302,13 @@ const useDataProcessing = (processingHook) => {
     }
   };
 
+  // Reset all data and return to input screen
+  const resetData = () => {
+    setAnalyzedReviews([]);
+    setSummary(null);
+    setActiveView('reviews');
+  };
+
   return {
     analyzedReviews,
     summary,
@@ -301,7 +317,8 @@ const useDataProcessing = (processingHook) => {
     processFileUpload,
     processScraping,
     processGitHubAnalysis,
-    downloadPDF
+    downloadPDF,
+    resetData
   };
 };
 
