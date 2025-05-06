@@ -22,3 +22,4 @@ scikit-learn>=1.0.0
 googletrans>=4.0.0
 langid>=1.1.6
 spacy>=3.5.0
+google-generativeai>=0.3.0

@@ -11,6 +11,7 @@ A full-stack web application that analyzes user feedback (tweets, reviews) and p
   - Context-aware sentiment detection
   - Sarcasm and irony detection
   - Aspect-based sentiment analysis
+  - Google Gemini API integration for faster processing
 - Categorize feedback into:
   - Pain points
   - Feature requests
@@ -20,6 +21,7 @@ A full-stack web application that analyzes user feedback (tweets, reviews) and p
 - Download PDF reports with actionable priorities for product managers
 - Track analysis history and view past results
 - Dynamic processing time estimation based on historical data
+- Batch processing with Gemini API for improved performance
 
 ## Tech Stack
 
@@ -27,6 +29,7 @@ A full-stack web application that analyzes user feedback (tweets, reviews) and p
 - FastAPI (Python)
 - SQLAlchemy for database ORM
 - Hugging Face Transformers for sentiment analysis
+- Google Gemini API for advanced text processing
 - NLTK and VADER for rule-based sentiment analysis
 - spaCy for NLP tasks and context analysis
 - KeyBERT for keyword extraction
@@ -82,7 +85,16 @@ cd backend
 pip install -r requirements.txt
 ```
 
-3. Run the backend server:
+3. Set up environment variables:
+```bash
+# Copy the example .env file
+cp .env.example .env
+
+# Edit the .env file to add your Gemini API key
+# You can get a Gemini API key from https://ai.google.dev/
+```
+
+4. Run the backend server:
 ```bash
 uvicorn main:app --reload
 ```
@@ -112,6 +124,11 @@ npm run dev
 ### Advanced Sentiment Analysis
 - `POST /api/sentiment/analyze` - Analyze sentiment of a single text with advanced features
 - `POST /api/sentiment/batch` - Analyze sentiment of multiple texts
+
+### Gemini API Integration
+- `POST /api/gemini/sentiment` - Analyze sentiment using Google's Gemini API
+- `POST /api/gemini/batch` - Batch process multiple texts with Gemini
+- `POST /api/gemini/insights` - Extract insights from reviews using Gemini
 
 ### History Tracking
 - `POST /api/history` - Record an analysis in the history
