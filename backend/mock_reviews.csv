@@ -1,0 +1,11 @@
+text,username,timestamp,rating
+"The app keeps crashing whenever I try to upload photos",user1,2025-04-29,2
+"Would love to have dark mode in the next update!",user2,2025-04-30,4
+"Everything works flawlessly. Great job!",user3,2025-04-30,5
+"Login with Google fails randomly",user4,2025-04-28,1
+"Please add offline mode for travel",user5,2025-04-27,3
+"Best app ever – beautiful UI and fast loading",user6,2025-04-27,5
+"The search function is too slow",user7,2025-04-26,2
+"Can you add more customization options?",user8,2025-04-25,4
+"Notifications are not working properly",user9,2025-04-24,1
+"Love the new update! Much faster now",user10,2025-04-23,5 
