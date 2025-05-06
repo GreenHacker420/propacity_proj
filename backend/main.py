@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 # Import core modules
 from app.api.routes import router as api_router
 from app.api.timing_routes import router as timing_router
+from app.api.history_routes import router as history_router
+from app.api.sentiment_routes import router as sentiment_router
 from app.utils.exceptions import ReviewSystemException
 
 # Try to import database
@@ -79,6 +81,18 @@ async def review_system_exception_handler(request: Request, exc: ReviewSystemExc
 
 # Include API routes
 app.include_router(api_router, prefix="/api")
+
+# Include timing routes
+logger.info("Including timing routes")
+app.include_router(timing_router, prefix="/api")
+
+# Include history routes
+logger.info("Including history routes")
+app.include_router(history_router, prefix="/api")
+
+# Include sentiment routes
+logger.info("Including advanced sentiment analysis routes")
+app.include_router(sentiment_router, prefix="/api")
 
 # Include advanced routes if available
 if ADVANCED_ROUTES_AVAILABLE:

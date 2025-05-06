@@ -6,19 +6,29 @@ A full-stack web application that analyzes user feedback (tweets, reviews) and p
 
 - Upload CSV files with user feedback
 - Scrape real-time feedback from Twitter and Google Play Store
-- Analyze sentiment and categorize feedback into:
+- Analyze GitHub repositories for issues and discussions
+- Advanced sentiment analysis with:
+  - Context-aware sentiment detection
+  - Sarcasm and irony detection
+  - Aspect-based sentiment analysis
+- Categorize feedback into:
   - Pain points
   - Feature requests
   - Positive feedback
 - Extract keywords from feedback
 - Generate summaries with top insights
 - Download PDF reports with actionable priorities for product managers
+- Track analysis history and view past results
+- Dynamic processing time estimation based on historical data
 
 ## Tech Stack
 
 ### Backend
 - FastAPI (Python)
+- SQLAlchemy for database ORM
 - Hugging Face Transformers for sentiment analysis
+- NLTK and VADER for rule-based sentiment analysis
+- spaCy for NLP tasks and context analysis
 - KeyBERT for keyword extraction
 - snscrape for Twitter data
 - google-play-scraper for Play Store data
@@ -28,7 +38,9 @@ A full-stack web application that analyzes user feedback (tweets, reviews) and p
 - React
 - Tailwind CSS
 - Headless UI components
+- Framer Motion for animations
 - Axios for API calls
+- Chart.js for data visualization
 
 ## Project Structure
 
@@ -90,11 +102,27 @@ npm run dev
 
 ## API Endpoints
 
+### Core Endpoints
 - `POST /api/upload` - Upload and analyze a CSV file
 - `GET /api/scrape` - Scrape and analyze data from Twitter or Play Store
 - `POST /api/analyze` - Analyze a list of reviews
 - `POST /api/summary` - Generate a summary from analyzed reviews
 - `POST /api/summary/pdf` - Generate a PDF report
+
+### Advanced Sentiment Analysis
+- `POST /api/sentiment/analyze` - Analyze sentiment of a single text with advanced features
+- `POST /api/sentiment/batch` - Analyze sentiment of multiple texts
+
+### History Tracking
+- `POST /api/history` - Record an analysis in the history
+- `GET /api/history` - Get analysis history
+- `GET /api/history/{analysis_id}` - Get a specific analysis by ID
+- `DELETE /api/history/{analysis_id}` - Delete an analysis history record
+
+### Processing Time Tracking
+- `POST /api/timing/record` - Record processing time for an operation
+- `GET /api/timing/estimate/{operation}` - Get estimated processing time
+- `GET /api/timing/history` - Get processing time history
 
 ## API Documentation
 
