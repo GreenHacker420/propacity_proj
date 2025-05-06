@@ -148,33 +148,60 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/scrape", response_model=List[ReviewResponse])
-async def scrape_data(source: str, query: str = None, app_id: str = None, limit: int = 50):
+async def scrape_data(
+    source: str = Query(..., description="Data source (twitter, playstore)"),
+    query: Optional[str] = Query(None, description="Search query or app URL"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of reviews to fetch"),
+    current_user: Optional[dict] = None  # Make authentication optional
+):
+    """
+    Scrape and analyze data from online sources
+    """
     try:
-        # Validate parameters
-        if source not in ["twitter", "playstore"]:
-            raise ValueError("Source must be 'twitter' or 'playstore'")
+        if source == 'playstore':
+            if not query:
+                raise HTTPException(status_code=400, detail="App URL is required for Play Store scraping")
+            try:
+                # Extract app ID from URL if needed
+                app_id = scraper.extract_app_id(query)
+                reviews = scraper.scrape_playstore(app_id, limit)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        elif source == 'twitter':
+            if not query:
+                raise HTTPException(status_code=400, detail="Search query is required for Twitter scraping")
+            reviews = scraper.scrape_twitter(query, limit)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
 
-        if source == "twitter" and not query:
-            raise ValueError("Query parameter is required for Twitter scraping")
-
-        if source == "playstore" and not app_id:
-            raise ValueError("App ID parameter is required for Play Store scraping")
-
-        # Scrape data
-        scraped_data = scraper.scrape(source, query, app_id, limit)
-
-        # Analyze each review
+        # Analyze the scraped reviews
         analyzed_reviews = []
-        for review in scraped_data:
+        for review in reviews:
             analysis = analyzer.analyze_text(review['text'])
-            review.update(analysis)
-            analyzed_reviews.append(review)
+            analyzed_reviews.append({
+                "text": review['text'],
+                "sentiment_score": analysis['sentiment_score'],
+                "sentiment_label": analysis['sentiment_label'],
+                "category": analysis['category'],
+                "keywords": analysis['keywords'],
+                "source": source,
+                "metadata": {
+                    "author": review.get('author', review.get('username')),
+                    "date": review.get('date', review.get('timestamp')),
+                    "rating": review.get('rating'),
+                    "thumbs_up": review.get('thumbs_up'),
+                    "app_version": review.get('app_version'),
+                    "app_name": review.get('app_name'),
+                    "app_developer": review.get('app_developer'),
+                    "app_category": review.get('app_category'),
+                    "app_rating": review.get('app_rating'),
+                    "app_installs": review.get('app_installs')
+                }
+            })
 
         return analyzed_reviews
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error(f"Error scraping data: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/analyze", response_model=List[ReviewResponse])

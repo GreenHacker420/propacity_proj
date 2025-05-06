@@ -77,15 +77,9 @@ const api = {
   scrapeData: async (source, query, limit) => {
     const params = {
       source,
+      query,
       limit
     };
-
-    // Add query or app_id based on the source
-    if (source === 'twitter') {
-      params.query = query;
-    } else if (source === 'playstore') {
-      params.app_id = query;
-    }
 
     const response = await axios.get('/api/scrape', { params });
     return response.data;

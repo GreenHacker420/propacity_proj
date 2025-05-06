@@ -13,6 +13,10 @@ class AnalysisHistoryBase(BaseModel):
     positive_feedback_count: int
     summary: Dict[str, Any]
 
+    class Config:
+        populate_by_name = True
+        from_attributes = True
+
 class AnalysisHistoryCreate(AnalysisHistoryBase):
     pass
 

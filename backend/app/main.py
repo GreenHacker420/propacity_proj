@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from datetime import datetime, timedelta
+from typing import List, Optional
 import logging
 
 # Configure logging
@@ -15,7 +17,10 @@ from app.api.routes import router as api_router
 from app.api.timing_routes import router as timing_router
 from app.api.history_routes import router as history_router
 from app.api.sentiment_routes import router as sentiment_router
+from app.api.weekly_routes import router as weekly_router
 from app.utils.exceptions import ReviewSystemException
+from app.auth.mongo_auth import get_current_active_user
+from app.mongodb import init_mongodb
 
 # Try to import Gemini routes
 try:
@@ -85,9 +90,9 @@ else:
     logger.warning("MongoDB is not available")
 
 app = FastAPI(
-    title="AI-Powered Feedback Analyzer",
-    description="Advanced API for analyzing product reviews and generating actionable insights using AI",
-    version="2.0.0"
+    title="Product Pulse API",
+    description="AI-Powered Feedback Analysis for Product Managers",
+    version="1.0.0"
 )
 
 # Configure CORS
@@ -115,6 +120,11 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# Initialize MongoDB connection
+@app.on_event("startup")
+async def startup_db_client():
+    await init_mongodb()
+
 # Exception handler
 @app.exception_handler(ReviewSystemException)
 async def review_system_exception_handler(_: Request, exc: ReviewSystemException):
@@ -124,7 +134,7 @@ async def review_system_exception_handler(_: Request, exc: ReviewSystemException
     )
 
 # Include API routes
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/api", tags=["api"])
 
 # Include timing routes
 logger.info("Including timing routes")
@@ -132,11 +142,15 @@ app.include_router(timing_router, prefix="/api")
 
 # Include history routes
 logger.info("Including history routes")
-app.include_router(history_router, prefix="/api")
+app.include_router(history_router, prefix="/api", tags=["history"])
 
 # Include sentiment routes
 logger.info("Including advanced sentiment analysis routes")
 app.include_router(sentiment_router, prefix="/api")
+
+# Include weekly routes
+logger.info("Including weekly routes")
+app.include_router(weekly_router, prefix="/api", tags=["weekly"])
 
 # Include advanced routes if available
 if ADVANCED_ROUTES_AVAILABLE:
@@ -162,7 +176,7 @@ else:
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "healthy", "timestamp": datetime.utcnow()}
 
 @app.get("/")
 async def root():
@@ -197,9 +211,9 @@ async def root():
         features.append("MongoDB Atlas Database Storage")
 
     return {
-        "message": "Welcome to the AI-Powered Feedback Analyzer API",
-        "version": "2.0.0",
+        "message": "Welcome to Product Pulse API",
         "docs_url": "/docs",
+        "version": "1.0.0",
         "features": features,
         "status": "Some features may be limited based on installed packages"
     } 

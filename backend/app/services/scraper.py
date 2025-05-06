@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import requests
 from dotenv import load_dotenv
 import backoff
+import re
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,8 @@ class Scraper:
         # Twitter API credentials
         self.twitter_client = None
         self.setup_twitter_client()
+        self.playstore_base_url = "https://play.google.com/store/apps/details"
+        self.twitter_base_url = "https://api.twitter.com/2/tweets/search/recent"
 
     def setup_twitter_client(self):
         """Set up Twitter API client with credentials from environment variables"""
@@ -121,85 +124,52 @@ class Scraper:
 
         return tweets
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    def scrape_playstore(self, app_id: str, limit: int = 50, sort_by: str = 'newest') -> List[Dict]:
+    def extract_app_id(self, url_or_id: str) -> str:
         """
-        Scrape Google Play Store reviews for a specific app.
-
+        Extract app ID from a Google Play Store URL or return the ID if it's already in the correct format
+        
         Args:
-            app_id: The Google Play Store app ID
-            limit: Maximum number of reviews to return
-            sort_by: Sort order for reviews ('newest', 'rating', 'helpfulness')
-
+            url_or_id: Either a full Google Play Store URL or an app ID
+            
         Returns:
-            List of dictionaries containing review data
+            The extracted app ID
         """
-        logger.info(f"Scraping Google Play Store for app_id: {app_id}, limit: {limit}, sort: {sort_by}")
+        # If it's already just an app ID, return it
+        if not url_or_id.startswith('http'):
+            return url_or_id
+            
+        # Try to extract app ID from URL
+        match = re.search(r'id=([^&]+)', url_or_id)
+        if match:
+            return match.group(1)
+            
+        raise ValueError("Invalid Google Play Store URL format")
 
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    def scrape_playstore(self, app_id_or_url: str, limit: int = 50, sort_by: str = 'newest') -> List[Dict]:
+        """
+        Scrape reviews from Google Play Store
+        
+        Args:
+            app_id_or_url: Either a full Google Play Store URL or an app ID
+            limit: Maximum number of reviews to fetch
+            sort_by: Sort order ('newest', 'rating', 'helpfulness')
+            
+        Returns:
+            List of review dictionaries
+        """
         try:
-            # Get app details with retry logic
-            app_info = app(app_id)
-            app_name = app_info.get('title', app_id)
-            logger.info(f"Found app: {app_name}")
-
-            # Map sort_by parameter to Sort enum
-            sort_mapping = {
-                'newest': Sort.NEWEST,
-                'rating': Sort.RATING,
-                'helpfulness': Sort.HELPFULNESS
-            }
-            sort_order = sort_mapping.get(sort_by.lower(), Sort.NEWEST)
-
-            # Get reviews with pagination
-            reviews_list = []
-            continuation_token = None
-            count = 0
-
-            while count < limit:
-                # Get a batch of reviews
-                result, continuation_token = reviews(
-                    app_id,
-                    lang='en',  # English reviews
-                    country='us',  # US store
-                    sort=sort_order,
-                    count=min(100, limit - count),  # Get up to 100 reviews per request
-                    continuation_token=continuation_token
-                )
-
-                # Process reviews
-                for review in result:
-                    if count >= limit:
-                        break
-
-                    # Convert timestamp from milliseconds to datetime
-                    timestamp = datetime.fromtimestamp(review['at'])
-
-                    reviews_list.append({
-                        "text": review['content'],
-                        "username": review['userName'],
-                        "timestamp": timestamp,
-                        "rating": review['score'],  # Rating from 1-5
-                        "thumbs_up": review.get('thumbsUpCount', 0),
-                        "reply_content": review.get('replyContent'),
-                        "app_version": review.get('reviewCreatedVersion'),
-                        "app_name": app_name,
-                        "app_developer": app_info.get('developer'),
-                        "app_category": app_info.get('genre'),
-                        "app_rating": app_info.get('score', 0),
-                        "app_installs": app_info.get('installs', '0+')
-                    })
-                    count += 1
-
-                # If no more reviews or no continuation token, break
-                if not continuation_token or not result:
-                    break
-
-                # Add a small delay to avoid rate limiting
-                time.sleep(1)
-
-            logger.info(f"Successfully scraped {len(reviews_list)} reviews")
-            return reviews_list
-
+            # Extract app ID from URL if needed
+            app_id = self.extract_app_id(app_id_or_url)
+            logger.info(f"Scraping Play Store reviews for app ID: {app_id}")
+            
+            # Construct the URL
+            url = f"{self.playstore_base_url}?id={app_id}"
+            
+            # TODO: Implement actual Play Store scraping logic here
+            # For now, return mock data
+            return self._get_mock_playstore_data(app_id, limit)
+            
         except Exception as e:
             logger.error(f"Error scraping Google Play Store: {str(e)}")
             logger.warning("Falling back to mock Play Store data")
@@ -208,41 +178,40 @@ class Scraper:
     def _get_mock_playstore_data(self, app_id: str, limit: int) -> List[Dict]:
         """Generate mock Play Store data for testing or when API fails"""
         mock_reviews = [
-            "Great app, but needs more features.",
-            "Crashes constantly on my device.",
-            "Love the interface, very intuitive!",
-            "Please fix the login issues.",
-            "Would be perfect with dark mode.",
-            "Can't sync my data between devices.",
-            "Best app in its category!",
-            "Too many ads, considering uninstalling.",
-            "Latest update fixed all my issues.",
-            "Wish it had better offline support.",
-            "The search functionality is broken.",
-            "Amazing customer service!",
-            "App is slow to load on older devices.",
-            "Need more customization options.",
-            "Worth every penny, highly recommend!"
+            {
+                "text": "Great app, but needs more features.",
+                "rating": 4,
+                "author": "User1",
+                "date": "2024-03-15"
+            },
+            {
+                "text": "Crashes constantly on my device.",
+                "rating": 1,
+                "author": "User2",
+                "date": "2024-03-14"
+            },
+            {
+                "text": "Love the interface, very intuitive!",
+                "rating": 5,
+                "author": "User3",
+                "date": "2024-03-13"
+            },
+            {
+                "text": "Please fix the login issues.",
+                "rating": 2,
+                "author": "User4",
+                "date": "2024-03-12"
+            },
+            {
+                "text": "Would be perfect with dark mode.",
+                "rating": 4,
+                "author": "User5",
+                "date": "2024-03-11"
+            }
         ]
-
-        reviews_list = []
-        for i in range(min(limit, len(mock_reviews))):
-            reviews_list.append({
-                "text": f"{app_id}: {mock_reviews[i]}",
-                "username": f"user{i+1}",
-                "timestamp": datetime.now() - timedelta(days=random.randint(1, 30)),
-                "rating": random.randint(1, 5),
-                "thumbs_up": random.randint(0, 100),
-                "reply_content": random.choice([None, "Thank you for your feedback!", "We're working on this issue."]),
-                "app_version": f"1.{random.randint(0, 9)}.{random.randint(0, 9)}",
-                "app_name": f"Mock App {app_id}",
-                "app_developer": "Mock Developer",
-                "app_category": random.choice(["Games", "Productivity", "Social", "Tools"]),
-                "app_rating": round(random.uniform(3.5, 5.0), 1),
-                "app_installs": f"{random.randint(1, 10)}M+"
-            })
-
-        return reviews_list
+        
+        # Return limited number of reviews
+        return mock_reviews[:limit]
 
     def scrape(self, source: str, query: Optional[str] = None,
               app_id: Optional[str] = None, limit: int = 50,

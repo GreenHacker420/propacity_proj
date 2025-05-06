@@ -27,7 +27,7 @@ const DataInputTabs = ({
   const [file, setFile] = useState(null);
   
   // Scraping state
-  const [scrapeSource, setScrapeSource] = useState('twitter');
+  const [scrapeSource, setScrapeSource] = useState('playstore');
   const [scrapeQuery, setScrapeQuery] = useState('');
   const [scrapeLimit, setScrapeLimit] = useState(50);
   
@@ -46,7 +46,20 @@ const DataInputTabs = ({
   // Handle scrape
   const handleScrape = () => {
     if (scrapeQuery) {
-      onScrape(scrapeSource, scrapeQuery, scrapeLimit);
+      // For Play Store, validate the URL format
+      if (scrapeSource === 'playstore') {
+        const appIdMatch = scrapeQuery.match(/id=([^&]+)/);
+        if (!appIdMatch) {
+          alert('Please enter a valid Google Play Store URL (e.g., https://play.google.com/store/apps/details?id=com.example.app)');
+          return;
+        }
+        // Pass the full URL as the query parameter
+        onScrape(scrapeSource, scrapeQuery, scrapeLimit);
+      } else {
+        onScrape(scrapeSource, scrapeQuery, scrapeLimit);
+      }
+    } else {
+      alert('Please enter a search query or app URL');
     }
   };
   
@@ -132,45 +145,56 @@ const DataInputTabs = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <h2 className="text-lg font-medium text-gray-800 mb-4">Scrape Online Reviews</h2>
+            <h2 className="text-lg font-medium text-gray-800 mb-4">Scrape Data</h2>
             <div className="space-y-4">
+              {/* Source Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">Source</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Data Source
+                </label>
                 <select
-                  className="input mt-1"
                   value={scrapeSource}
                   onChange={(e) => setScrapeSource(e.target.value)}
-                  disabled={loading}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 >
-                  <option value="twitter">Twitter</option>
                   <option value="playstore">Google Play Store</option>
+                  <option value="twitter">Twitter</option>
                 </select>
               </div>
 
+              {/* Query Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {scrapeSource === 'twitter' ? 'Search Query' : 'App ID'}
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {scrapeSource === 'playstore' ? 'App URL' : 'Search Query'}
                 </label>
                 <input
                   type="text"
-                  className="input mt-1"
                   value={scrapeQuery}
                   onChange={(e) => setScrapeQuery(e.target.value)}
-                  placeholder={scrapeSource === 'twitter' ? 'e.g., spotify OR #spotify' : 'e.g., com.instagram.android'}
-                  disabled={loading}
+                  placeholder={scrapeSource === 'playstore' 
+                    ? "https://play.google.com/store/apps/details?id=com.example.app"
+                    : "Enter search query"}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
+                {scrapeSource === 'playstore' && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    Enter the full Google Play Store URL of the app
+                  </p>
+                )}
               </div>
 
+              {/* Limit Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700">Limit</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Number of Reviews
+                </label>
                 <input
                   type="number"
-                  className="input mt-1"
                   value={scrapeLimit}
                   onChange={(e) => setScrapeLimit(parseInt(e.target.value))}
                   min="1"
                   max="100"
-                  disabled={loading}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
               </div>
 
