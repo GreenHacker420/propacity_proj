@@ -1,21 +1,19 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import tempfile
 import os
 import logging
 from datetime import datetime
 import io
-from sqlalchemy.orm import Session
 from .models import ReviewCreate, ReviewResponse, SummaryResponse, VisualizationResponse
 from ..services.analyzer import TextAnalyzer
 from ..services.scraper import Scraper
 from ..services.visualization import Visualizer
-from ..database import get_db
-from ..models.db_models import Review as DBReview, Keyword
-from ..auth.security import get_current_active_user
-from ..models.user import User
+from ..mongodb import get_collection
+from ..models.db_models import Review as DBReview, Keyword, ReviewModel
+from ..auth.mongo_auth import get_current_active_user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

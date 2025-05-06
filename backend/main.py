@@ -25,15 +25,7 @@ except ImportError:
     logger.warning("Gemini routes could not be imported. Gemini API will be disabled.")
     GEMINI_AVAILABLE = False
 
-# Try to import SQLite database
-try:
-    from app.database import engine, Base
-    SQLITE_AVAILABLE = True
-except ImportError:
-    logger.warning("SQLite database module could not be imported. SQLite functionality will be disabled.")
-    SQLITE_AVAILABLE = False
-
-# Try to import MongoDB
+# Import MongoDB
 try:
     from app.mongodb import get_client
     # Test MongoDB connection
@@ -42,11 +34,11 @@ try:
     MONGODB_AVAILABLE = True
     logger.info("MongoDB connection successful")
 except Exception as e:
-    logger.warning(f"MongoDB connection failed: {str(e)}. MongoDB functionality will be disabled.")
-    MONGODB_AVAILABLE = False
+    logger.error(f"MongoDB connection failed: {str(e)}. Application cannot function without MongoDB.")
+    raise
 
-# Set overall database availability
-DATABASE_AVAILABLE = SQLITE_AVAILABLE or MONGODB_AVAILABLE
+# Set database availability
+DATABASE_AVAILABLE = MONGODB_AVAILABLE
 
 # Try to import advanced routes
 try:
@@ -56,25 +48,15 @@ except ImportError:
     logger.warning("Advanced routes could not be imported. Advanced analysis will be disabled.")
     ADVANCED_ROUTES_AVAILABLE = False
 
-# Try to import auth router
+# Import auth router
 try:
-    from app.auth.router import router as auth_router
+    # Use MongoDB auth router
+    from app.auth.mongo_router import router as auth_router
+    logger.info("Using MongoDB authentication")
     AUTH_AVAILABLE = True
-except ImportError:
-    logger.warning("Auth router could not be imported. Authentication will be disabled.")
+except ImportError as e:
+    logger.warning(f"Auth router could not be imported: {str(e)}. Authentication will be disabled.")
     AUTH_AVAILABLE = False
-
-# Create database tables if SQLite is available
-if SQLITE_AVAILABLE:
-    try:
-        logger.info("Creating SQLite database tables...")
-        Base.metadata.create_all(bind=engine)
-        logger.info("SQLite database tables created successfully")
-    except Exception as e:
-        logger.error(f"Error creating SQLite database tables: {str(e)}")
-        logger.warning("Application will run with limited SQLite functionality")
-else:
-    logger.warning("Skipping SQLite database table creation as SQLite is not available")
 
 # Log MongoDB status
 if MONGODB_AVAILABLE:
@@ -196,9 +178,6 @@ async def root():
 
     if AUTH_AVAILABLE:
         features.append("User Authentication")
-
-    if SQLITE_AVAILABLE:
-        features.append("SQLite Database Storage")
 
     if MONGODB_AVAILABLE:
         features.append("MongoDB Atlas Database Storage")

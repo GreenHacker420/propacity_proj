@@ -1,13 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
-from sqlalchemy.orm import Session
 
 from ..models.processing_time import ProcessingTimeCreate, ProcessingTimeResponse, EstimatedProcessingTime
-from ..services.timing import timing_service
-from ..database import get_db
-from ..auth.security import get_current_active_user
-from ..models.user import User
+from ..services.mongo_timing import mongo_timing_service
+from ..auth.mongo_auth import get_current_active_user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,14 +19,16 @@ router = APIRouter(
 
 @router.post("/record", response_model=ProcessingTimeResponse)
 async def record_processing_time(
-    time_data: ProcessingTimeCreate,
-    db: Session = Depends(get_db)
+    time_data: ProcessingTimeCreate
 ):
     """
     Record the time taken for a processing operation
     """
     try:
-        return timing_service.record_processing_time(db, time_data)
+        result = mongo_timing_service.record_processing_time(time_data.model_dump())
+        # Convert ObjectId to string
+        result["_id"] = str(result["_id"])
+        return result
     except Exception as e:
         logger.error(f"Error recording processing time: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -37,14 +36,14 @@ async def record_processing_time(
 @router.get("/estimate/{operation}", response_model=EstimatedProcessingTime)
 async def get_estimated_time(
     operation: str,
-    record_count: int,
-    db: Session = Depends(get_db)
+    record_count: int
 ):
     """
     Get estimated processing time for an operation
     """
     try:
-        return timing_service.get_estimated_time(db, operation, record_count)
+        result = mongo_timing_service.get_estimated_time(operation, record_count)
+        return result
     except Exception as e:
         logger.error(f"Error getting estimated time: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -53,14 +52,18 @@ async def get_estimated_time(
 async def get_processing_time_history(
     operation: Optional[str] = None,
     limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    _: dict = Depends(get_current_active_user)  # For authentication only
 ):
     """
     Get processing time history (requires authentication)
     """
     try:
-        return timing_service.get_all_processing_times(db, operation, limit)
+        results = mongo_timing_service.get_all_processing_times(operation, limit)
+        # Convert ObjectId to string in each result
+        for result in results:
+            if "_id" in result and not isinstance(result["_id"], str):
+                result["_id"] = str(result["_id"])
+        return results
     except Exception as e:
         logger.error(f"Error getting processing time history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

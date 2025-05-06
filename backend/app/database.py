@@ -1,30 +1,31 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import os
-from dotenv import load_dotenv
+"""
+This module redirects database operations to MongoDB.
+SQLite is no longer used in this application.
+"""
 
-# Load environment variables
-load_dotenv()
+import logging
+from .mongodb import get_collection, get_database
 
-# Get database URL from environment or use SQLite as default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./product_reviews.db")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Create SQLAlchemy engine
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
+# Dummy Base class for backward compatibility
+class Base:
+    """Dummy Base class for backward compatibility"""
+    metadata = type('', (), {'create_all': lambda bind: None})()
 
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Dummy engine for backward compatibility
+engine = None
 
-# Create base class for models
-Base = declarative_base()
-
-# Dependency to get DB session
+# Dependency to get DB session (redirects to MongoDB)
 def get_db():
-    db = SessionLocal()
+    """
+    This function is kept for backward compatibility.
+    It yields None since we're using MongoDB directly now.
+    """
+    logger.warning("get_db() called - SQLite is no longer used, use MongoDB functions instead")
     try:
-        yield db
+        yield None
     finally:
-        db.close()
+        pass

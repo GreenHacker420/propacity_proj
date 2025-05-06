@@ -1,53 +1,82 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table
-from sqlalchemy.orm import relationship
+"""
+MongoDB-compatible models for the Product Review Analyzer.
+These are not SQLAlchemy models but simple dictionaries that represent MongoDB documents.
+"""
+
 from datetime import datetime
-from typing import List, Optional
-from ..database import Base
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 
-# Association table for keywords
-review_keyword = Table(
-    'review_keyword',
-    Base.metadata,
-    Column('review_id', Integer, ForeignKey('reviews.id')),
-    Column('keyword_id', Integer, ForeignKey('keywords.id'))
-)
+# MongoDB document structure for keywords
+class KeywordModel(BaseModel):
+    """Pydantic model for keywords"""
+    id: Optional[str] = Field(None, alias="_id")
+    text: str
 
-class Keyword(Base):
-    __tablename__ = "keywords"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    text = Column(String, unique=True, index=True)
-    
-    # Relationships
-    reviews = relationship("Review", secondary=review_keyword, back_populates="keywords")
-    
-    def __repr__(self):
-        return f"<Keyword {self.text}>"
+    class Config:
+        populate_by_name = True
 
-class Review(Base):
-    __tablename__ = "reviews"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    text = Column(String, index=True)
-    username = Column(String, nullable=True)
-    timestamp = Column(DateTime, default=datetime.now)
-    rating = Column(Float, nullable=True)
-    sentiment_score = Column(Float)
-    sentiment_label = Column(String)
-    category = Column(String)
-    source = Column(String, nullable=True)  # e.g., "twitter", "playstore", "csv"
-    
-    # User relationship (if authenticated)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    user = relationship("User", back_populates="reviews")
-    
-    # Keywords relationship
-    keywords = relationship("Keyword", secondary=review_keyword, back_populates="reviews")
-    
-    def __repr__(self):
-        return f"<Review {self.id}: {self.text[:30]}...>"
-    
+# MongoDB document structure for reviews
+class ReviewModel(BaseModel):
+    """Pydantic model for reviews"""
+    id: Optional[str] = Field(None, alias="_id")
+    text: str
+    username: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+    rating: Optional[float] = None
+    sentiment_score: float
+    sentiment_label: str
+    category: str = "general"
+    source: Optional[str] = None  # e.g., "twitter", "playstore", "csv"
+    user_id: Optional[str] = None
+    keywords: List[str] = []
+
+    class Config:
+        populate_by_name = True
+
     @property
     def keywords_list(self) -> List[str]:
         """Return a list of keyword strings"""
-        return [keyword.text for keyword in self.keywords]
+        return self.keywords
+
+# For backward compatibility
+class Review:
+    """
+    Compatibility class for code that expects SQLAlchemy models.
+    This is a wrapper around a MongoDB document.
+    """
+    def __init__(self, document: Dict[str, Any]):
+        self._document = document
+        self.id = str(document.get("_id", ""))
+        self.text = document.get("text", "")
+        self.username = document.get("username")
+        self.timestamp = document.get("timestamp", datetime.now())
+        self.rating = document.get("rating")
+        self.sentiment_score = document.get("sentiment_score", 0.0)
+        self.sentiment_label = document.get("sentiment_label", "NEUTRAL")
+        self.category = document.get("category", "general")
+        self.source = document.get("source")
+        self.user_id = document.get("user_id")
+        self.keywords = document.get("keywords", [])
+
+    def __repr__(self):
+        return f"<Review {self.id}: {self.text[:30]}...>"
+
+    @property
+    def keywords_list(self) -> List[str]:
+        """Return a list of keyword strings"""
+        return self.keywords
+
+# For backward compatibility
+class Keyword:
+    """
+    Compatibility class for code that expects SQLAlchemy models.
+    This is a wrapper around a MongoDB document.
+    """
+    def __init__(self, document: Dict[str, Any]):
+        self._document = document
+        self.id = str(document.get("_id", ""))
+        self.text = document.get("text", "")
+
+    def __repr__(self):
+        return f"<Keyword {self.text}>"
