@@ -208,12 +208,12 @@ class TextAnalyzer:
 
         return sentiment_score, sentiment_label
 
-    def generate_summary(self, reviews: List[Dict]) -> Dict:
+    def generate_summary(self, reviews: List[Any]) -> Dict:
         """
         Generate a summary of the analyzed reviews.
 
         Args:
-            reviews: List of analyzed review dictionaries
+            reviews: List of analyzed review objects (either dictionaries or Pydantic models)
 
         Returns:
             Dictionary with pain points, feature requests, positive feedback, and suggested priorities
@@ -224,36 +224,55 @@ class TextAnalyzer:
         positive_feedback = []
 
         for review in reviews:
-            if review["category"] == "pain_point":
+            # Handle both dictionary and Pydantic model access
+            try:
+                # Try dictionary-style access first
+                category = review["category"]
+            except (TypeError, KeyError):
+                # Fall back to attribute access for Pydantic models
+                category = review.category
+
+            if category == "pain_point":
                 pain_points.append(review)
-            elif review["category"] == "feature_request":
+            elif category == "feature_request":
                 feature_requests.append(review)
             else:
                 positive_feedback.append(review)
 
+        # Helper function to get attribute from either dict or object
+        def get_attr(obj, attr):
+            try:
+                return obj[attr]  # Try dictionary access
+            except (TypeError, KeyError):
+                return getattr(obj, attr)  # Fall back to attribute access
+
         # Sort by sentiment score (ascending for pain points, descending for others)
-        pain_points.sort(key=lambda x: x["sentiment_score"])
-        feature_requests.sort(key=lambda x: x["sentiment_score"], reverse=True)
-        positive_feedback.sort(key=lambda x: x["sentiment_score"], reverse=True)
+        pain_points.sort(key=lambda x: get_attr(x, "sentiment_score"))
+        feature_requests.sort(key=lambda x: get_attr(x, "sentiment_score"), reverse=True)
+        positive_feedback.sort(key=lambda x: get_attr(x, "sentiment_score"), reverse=True)
 
         # Generate suggested priorities
         priorities = []
 
         # Add pain points to priorities (most critical first)
         if pain_points:
-            priorities.append(f"Address critical issue: {pain_points[0]['text'][:100]}...")
+            text = get_attr(pain_points[0], "text")
+            priorities.append(f"Address critical issue: {text[:100]}...")
 
             # Add more pain points if available
             if len(pain_points) > 1:
-                priorities.append(f"Fix secondary issue: {pain_points[1]['text'][:100]}...")
+                text = get_attr(pain_points[1], "text")
+                priorities.append(f"Fix secondary issue: {text[:100]}...")
 
         # Add feature requests to priorities
         if feature_requests:
-            priorities.append(f"Implement requested feature: {feature_requests[0]['text'][:100]}...")
+            text = get_attr(feature_requests[0], "text")
+            priorities.append(f"Implement requested feature: {text[:100]}...")
 
         # Add general recommendation
         if positive_feedback:
-            priorities.append(f"Maintain strengths: {positive_feedback[0]['text'][:100]}...")
+            text = get_attr(positive_feedback[0], "text")
+            priorities.append(f"Maintain strengths: {text[:100]}...")
 
         # Get top 3 of each category (or fewer if not available)
         top_pain_points = pain_points[:3]
@@ -263,25 +282,25 @@ class TextAnalyzer:
         # Create summary items with required fields
         pain_point_items = [
             {
-                "text": item["text"],
-                "sentiment_score": item["sentiment_score"],
-                "keywords": item["keywords"]
+                "text": get_attr(item, "text"),
+                "sentiment_score": get_attr(item, "sentiment_score"),
+                "keywords": get_attr(item, "keywords")
             } for item in top_pain_points
         ]
 
         feature_request_items = [
             {
-                "text": item["text"],
-                "sentiment_score": item["sentiment_score"],
-                "keywords": item["keywords"]
+                "text": get_attr(item, "text"),
+                "sentiment_score": get_attr(item, "sentiment_score"),
+                "keywords": get_attr(item, "keywords")
             } for item in top_feature_requests
         ]
 
         positive_feedback_items = [
             {
-                "text": item["text"],
-                "sentiment_score": item["sentiment_score"],
-                "keywords": item["keywords"]
+                "text": get_attr(item, "text"),
+                "sentiment_score": get_attr(item, "sentiment_score"),
+                "keywords": get_attr(item, "keywords")
             } for item in top_positive_feedback
         ]
 

@@ -24,6 +24,7 @@ MANIFEST
 # Virtual Environment
 venv/
 backend/venv/
+venv311/
 
 # Node.js
 node_modules/
