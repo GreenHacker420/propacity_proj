@@ -270,6 +270,11 @@ const useDataProcessing = (processingHook) => {
     try {
       // Send the analyzed reviews to get a summary
       const summaryData = await api.generateSummary(reviewsData);
+
+      // Add source type and name to the summary data for use in the weekly summary
+      summaryData.source_type = sourceType;
+      summaryData.source_name = sourceName;
+
       setSummary(summaryData);
 
       // Record processing time

@@ -37,9 +37,10 @@ class WeeklySummaryResponse(WeeklySummaryBase):
     created_at: datetime
     user_id: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        from_attributes = True
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": True
+    }
 
 class PriorityInsights(BaseModel):
     """Model for priority insights"""
@@ -48,4 +49,4 @@ class PriorityInsights(BaseModel):
     sentiment_trends: Dict[str, float]
     action_items: List[str]
     risk_areas: List[str]
-    opportunity_areas: List[str] 
+    opportunity_areas: List[str]

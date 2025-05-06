@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from typing import List, Optional, Dict, Any
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from bson.objectid import ObjectId
 
 from ..models.analysis_history import AnalysisHistoryCreate, AnalysisHistoryResponse, AnalysisHistoryList
@@ -25,46 +25,40 @@ history_collection = get_collection("analysis_history")
 
 @router.post("", response_model=AnalysisHistoryResponse)  # This will be /history
 async def record_analysis(
-    analysis_data: AnalysisHistoryCreate,
+    request: Request,
     current_user: Optional[dict] = None  # Make authentication optional
 ):
     """
     Record an analysis in history
     """
     try:
+        # Get request data
+        data = await request.json()
+
         # Create history record
         history_record = {
-            "source_type": analysis_data.source_type,
-            "source_name": analysis_data.source_name,
-            "record_count": analysis_data.record_count,
-            "avg_sentiment_score": analysis_data.avg_sentiment_score,
-            "pain_point_count": analysis_data.pain_point_count,
-            "feature_request_count": analysis_data.feature_request_count,
-            "positive_feedback_count": analysis_data.positive_feedback_count,
-            "summary": analysis_data.summary,
-            "timestamp": datetime.utcnow(),
+            "source_type": data["source_type"],
+            "source_name": data["source_name"],
+            "record_count": data["record_count"],
+            "avg_sentiment_score": data["avg_sentiment_score"],
+            "pain_point_count": data["pain_point_count"],
+            "feature_request_count": data["feature_request_count"],
+            "positive_feedback_count": data["positive_feedback_count"],
+            "summary": data["summary"],
+            "timestamp": datetime.now(timezone.utc),
             "user_id": current_user.get("id") if current_user else None
         }
 
         # Insert into database
-        result = await history_collection.insert_one(history_record)
-        
+        result = history_collection.insert_one(history_record)
+
         # Get the inserted record
-        inserted_record = await history_collection.find_one({"_id": result.inserted_id})
-        
-        return {
-            "id": str(inserted_record["_id"]),
-            "source_type": inserted_record["source_type"],
-            "source_name": inserted_record["source_name"],
-            "record_count": inserted_record["record_count"],
-            "avg_sentiment_score": inserted_record["avg_sentiment_score"],
-            "pain_point_count": inserted_record["pain_point_count"],
-            "feature_request_count": inserted_record["feature_request_count"],
-            "positive_feedback_count": inserted_record["positive_feedback_count"],
-            "summary": inserted_record["summary"],
-            "timestamp": inserted_record["timestamp"],
-            "user_id": inserted_record.get("user_id")
-        }
+        inserted_record = history_collection.find_one({"_id": result.inserted_id})
+
+        # Create response object using the from_mongo method
+        response_data = AnalysisHistoryResponse.from_mongo(inserted_record)
+
+        return response_data
     except Exception as e:
         logger.error(f"Error recording analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -81,25 +75,15 @@ async def get_analysis_history(
         cursor = history_collection.find(
             {"user_id": current_user.get("id") if current_user else None}
         ).sort("timestamp", -1)
-        
-        history = await cursor.to_list(length=None)
-        
-        return [
-            {
-                "id": str(record["_id"]),
-                "source_type": record["source_type"],
-                "source_name": record["source_name"],
-                "record_count": record["record_count"],
-                "avg_sentiment_score": record["avg_sentiment_score"],
-                "pain_point_count": record["pain_point_count"],
-                "feature_request_count": record["feature_request_count"],
-                "positive_feedback_count": record["positive_feedback_count"],
-                "summary": record["summary"],
-                "timestamp": record["timestamp"],
-                "user_id": record.get("user_id")
-            }
-            for record in history
-        ]
+
+        history = list(cursor)
+
+        # Create response objects using the from_mongo method
+        response_data = []
+        for record in history:
+            response_data.append(AnalysisHistoryResponse.from_mongo(record))
+
+        return response_data
     except Exception as e:
         logger.error(f"Error fetching history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -114,24 +98,15 @@ async def get_analysis_by_id(
     """
     try:
         # Query specific history record
-        history = await history_collection.find_one({"_id": ObjectId(history_id)})
-        
+        history = history_collection.find_one({"_id": ObjectId(history_id)})
+
         if not history:
             raise HTTPException(status_code=404, detail="Analysis not found")
-            
-        return {
-            "id": str(history["_id"]),
-            "source_type": history["source_type"],
-            "source_name": history["source_name"],
-            "record_count": history["record_count"],
-            "avg_sentiment_score": history["avg_sentiment_score"],
-            "pain_point_count": history["pain_point_count"],
-            "feature_request_count": history["feature_request_count"],
-            "positive_feedback_count": history["positive_feedback_count"],
-            "summary": history["summary"],
-            "timestamp": history["timestamp"],
-            "user_id": history.get("user_id")
-        }
+
+        # Create response object using the from_mongo method
+        response_data = AnalysisHistoryResponse.from_mongo(history)
+
+        return response_data
     except Exception as e:
         logger.error(f"Error fetching analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -146,18 +121,18 @@ async def delete_analysis(
     """
     try:
         # Find the history record
-        history = await history_collection.find_one({"_id": ObjectId(history_id)})
-        
+        history = history_collection.find_one({"_id": ObjectId(history_id)})
+
         if not history:
             raise HTTPException(status_code=404, detail="Analysis not found")
-            
+
         # Check if user is authorized to delete
         if current_user and history.get("user_id") != current_user.get("id"):
             raise HTTPException(status_code=403, detail="Not authorized to delete this analysis")
-            
+
         # Delete the record
-        await history_collection.delete_one({"_id": ObjectId(history_id)})
-        
+        history_collection.delete_one({"_id": ObjectId(history_id)})
+
         return {"message": "Analysis deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting analysis: {str(e)}")

@@ -186,6 +186,41 @@ const api = {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  },
+
+  // Get prioritized insights from recent feedback
+  getPriorityInsights: async (sourceType = null) => {
+    const params = sourceType ? { source_type: sourceType } : {};
+    const response = await axios.get('/api/weekly/priorities', { params });
+    return response.data;
+  },
+
+  // Create a weekly summary for a specific source
+  createWeeklySummary: async (sourceType, sourceName) => {
+    const response = await axios.post('/api/weekly/summary', null, {
+      params: { source_type: sourceType, source_name: sourceName }
+    });
+    return response.data;
+  },
+
+  // Get a specific weekly summary by ID
+  getWeeklySummary: async (summaryId) => {
+    const response = await axios.get(`/api/weekly/summary/${summaryId}`);
+    return response.data;
+  },
+
+  // Get all weekly summaries, optionally filtered by source type
+  getWeeklySummaries: async (sourceType = null) => {
+    const params = sourceType ? { source_type: sourceType } : {};
+    const response = await axios.get('/api/weekly/summaries', { params });
+    return response.data;
+  },
+
+  // Get prioritized insights from recent feedback
+  getPriorityInsights: async (sourceType = null) => {
+    const params = sourceType ? { source_type: sourceType } : {};
+    const response = await axios.get('/api/weekly/priorities', { params });
+    return response.data;
   }
 };
 

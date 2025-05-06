@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+import json
 
 # Pydantic models for API
 class AnalysisHistoryBase(BaseModel):
@@ -13,9 +14,10 @@ class AnalysisHistoryBase(BaseModel):
     positive_feedback_count: int
     summary: Dict[str, Any]
 
-    class Config:
-        populate_by_name = True
-        from_attributes = True
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": True
+    }
 
 class AnalysisHistoryCreate(AnalysisHistoryBase):
     pass
@@ -25,9 +27,25 @@ class AnalysisHistoryResponse(AnalysisHistoryBase):
     timestamp: datetime
     user_id: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        from_attributes = True
+    model_config = {
+        "populate_by_name": True,
+        "from_attributes": True,
+        "json_encoders": {
+            datetime: lambda dt: dt.isoformat()
+        }
+    }
+
+    @classmethod
+    def from_mongo(cls, data: Dict[str, Any]):
+        """Create a model instance from MongoDB document"""
+        if data is None:
+            return None
+
+        # Convert ObjectId to string
+        if "_id" in data:
+            data["_id"] = str(data["_id"])
+
+        return cls(**data)
 
 # Model for analysis history list
 class AnalysisHistoryList(BaseModel):

@@ -2,9 +2,13 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorCollection
 from ..models.weekly_summary import WeeklySummaryCreate, WeeklySummaryResponse, PriorityItem, PriorityInsights
-from ..db.mongodb import get_collection
+from ..mongodb import get_collection
 from ..services.sentiment_analyzer import SentimentAnalyzer
 from ..services.text_classifier import TextClassifier
+from bson.objectid import ObjectId
+import logging
+
+logger = logging.getLogger(__name__)
 
 class WeeklySummaryService:
     def __init__(self):
@@ -49,7 +53,7 @@ class WeeklySummaryService:
 
             # Classify feedback
             feedback_type = await self.text_classifier.classify_feedback(review["text"])
-            
+
             # Extract keywords
             keywords = await self.text_classifier.extract_keywords(review["text"])
             for keyword in keywords:
@@ -102,10 +106,10 @@ class WeeklySummaryService:
         )
 
         # Save to database
-        result = await self.collection.insert_one(summary.dict())
-        summary_dict = summary.dict()
+        summary_dict = summary.model_dump() if hasattr(summary, 'model_dump') else summary.dict()
+        result = await self.collection.insert_one(summary_dict)
         summary_dict["_id"] = str(result.inserted_id)
-        summary_dict["created_at"] = datetime.utcnow()
+        summary_dict["created_at"] = datetime.now(datetime.timezone.utc)
         summary_dict["user_id"] = user_id
 
         return WeeklySummaryResponse(**summary_dict)
@@ -113,73 +117,101 @@ class WeeklySummaryService:
     async def get_priority_insights(
         self,
         source_type: Optional[str] = None,
+        user_id: Optional[str] = None,
         days: int = 7
     ) -> PriorityInsights:
         """Get priority insights from recent feedback"""
-        # Get recent summaries
-        query = {}
-        if source_type:
-            query["source_type"] = source_type
-        
-        query["created_at"] = {
-            "$gte": datetime.utcnow() - timedelta(days=days)
-        }
+        try:
+            # Get recent summaries
+            query = {}
+            if source_type:
+                query["source_type"] = source_type
+            if user_id:
+                query["user_id"] = user_id
 
-        summaries = await self.collection.find(query).to_list(length=None)
+            query["created_at"] = {
+                "$gte": datetime.now(datetime.timezone.utc) - timedelta(days=days)
+            }
 
-        if not summaries:
-            raise ValueError("No summaries found for the specified criteria")
+            cursor = self.collection.find(query)
+            summaries = await cursor.to_list(length=None)
 
-        # Aggregate high priority items
-        high_priority_items = []
-        trending_topics = []
-        sentiment_trends = {}
-        action_items = set()
-        risk_areas = set()
-        opportunity_areas = set()
+            if not summaries:
+                raise ValueError("No summaries found for the specified criteria")
 
-        for summary in summaries:
-            # Collect high priority items
-            high_priority_items.extend(summary["pain_points"])
-            high_priority_items.extend(summary["feature_requests"])
+            # Aggregate high priority items
+            high_priority_items = []
+            trending_topics = []
+            sentiment_trends = {}
+            action_items = set()
+            risk_areas = set()
+            opportunity_areas = set()
 
-            # Analyze trends
-            trending_topics.extend([
-                {"topic": k, "count": v}
-                for k, v in summary["top_keywords"].items()
-            ])
+            for summary in summaries:
+                # Collect high priority items
+                if "pain_points" in summary:
+                    high_priority_items.extend(summary["pain_points"])
+                if "feature_requests" in summary:
+                    high_priority_items.extend(summary["feature_requests"])
 
-            # Track sentiment trends
-            sentiment_trends[summary["source_name"]] = summary["avg_sentiment_score"]
+                # Analyze trends
+                if "top_keywords" in summary:
+                    trending_topics.extend([
+                        {"topic": k, "count": v}
+                        for k, v in summary["top_keywords"].items()
+                    ])
 
-            # Extract recommendations
-            for rec in summary["recommendations"]:
-                if "risk" in rec.lower():
-                    risk_areas.add(rec)
-                elif "opportunity" in rec.lower():
-                    opportunity_areas.add(rec)
-                else:
-                    action_items.add(rec)
+                # Track sentiment trends
+                if "source_name" in summary and "avg_sentiment_score" in summary:
+                    sentiment_trends[summary["source_name"]] = summary["avg_sentiment_score"]
 
-        return PriorityInsights(
-            high_priority_items=sorted(high_priority_items, key=lambda x: x["priority_score"], reverse=True)[:10],
-            trending_topics=sorted(trending_topics, key=lambda x: x["count"], reverse=True)[:5],
-            sentiment_trends=sentiment_trends,
-            action_items=list(action_items),
-            risk_areas=list(risk_areas),
-            opportunity_areas=list(opportunity_areas)
-        )
+                # Extract recommendations
+                if "recommendations" in summary:
+                    for rec in summary["recommendations"]:
+                        if isinstance(rec, str):
+                            if "risk" in rec.lower():
+                                risk_areas.add(rec)
+                            elif "opportunity" in rec.lower():
+                                opportunity_areas.add(rec)
+                            else:
+                                action_items.add(rec)
+
+            # Sort and limit high priority items
+            sorted_high_priority = sorted(
+                high_priority_items,
+                key=lambda x: x.get("priority_score", 0),
+                reverse=True
+            )[:10]
+
+            # Sort and limit trending topics
+            sorted_trending = sorted(
+                trending_topics,
+                key=lambda x: x.get("count", 0),
+                reverse=True
+            )[:5]
+
+            return PriorityInsights(
+                high_priority_items=sorted_high_priority,
+                trending_topics=sorted_trending,
+                sentiment_trends=sentiment_trends,
+                action_items=list(action_items),
+                risk_areas=list(risk_areas),
+                opportunity_areas=list(opportunity_areas)
+            )
+        except Exception as e:
+            logger.error(f"Error getting priority insights: {str(e)}")
+            raise
 
     def _calculate_priority_score(self, sentiment_score: float, feedback_type: str) -> float:
         """Calculate priority score based on sentiment and feedback type"""
         base_score = abs(sentiment_score)  # Higher absolute sentiment means higher priority
-        
+
         # Adjust based on feedback type
         if feedback_type == "pain_point":
             base_score *= 1.5  # Pain points get higher priority
         elif feedback_type == "feature_request":
             base_score *= 1.2  # Feature requests get medium priority
-        
+
         return min(base_score, 1.0)  # Normalize to 0-1 range
 
     async def _analyze_trends(self, reviews: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -254,4 +286,41 @@ class WeeklySummaryService:
                 f"to improve other areas"
             )
 
-        return recommendations 
+        return recommendations
+
+    async def get_summary_by_id(self, summary_id: str) -> Optional[WeeklySummaryResponse]:
+        """Get a specific weekly summary by ID"""
+        try:
+            summary = await self.collection.find_one({"_id": ObjectId(summary_id)})
+            if summary:
+                summary["_id"] = str(summary["_id"])
+                return WeeklySummaryResponse(**summary)
+            return None
+        except Exception as e:
+            logger.error(f"Error getting summary by ID: {str(e)}")
+            raise
+
+    async def get_summaries(
+        self,
+        source_type: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> List[WeeklySummaryResponse]:
+        """Get all weekly summaries, optionally filtered by source type and user ID"""
+        try:
+            query = {}
+            if source_type:
+                query["source_type"] = source_type
+            if user_id:
+                query["user_id"] = user_id
+
+            cursor = self.collection.find(query)
+            summaries = await cursor.to_list(length=None)
+
+            # Convert ObjectId to string and create response objects
+            for summary in summaries:
+                summary["_id"] = str(summary["_id"])
+
+            return [WeeklySummaryResponse(**summary) for summary in summaries]
+        except Exception as e:
+            logger.error(f"Error getting summaries: {str(e)}")
+            raise
