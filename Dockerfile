@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11.7-slim
 
 # Set working directory
 WORKDIR /app
@@ -28,7 +28,9 @@ RUN cd frontend && npm install
 COPY . .
 
 # Build the frontend
-RUN cd frontend && npm run build
+RUN cd frontend && npm run build && \
+    # Ensure the build directory exists
+    mkdir -p frontend/dist
 
 # Expose the port
 EXPOSE $PORT

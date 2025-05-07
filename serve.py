@@ -28,7 +28,19 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 # Check if the frontend build directory exists
 if not os.path.exists(FRONTEND_DIR):
     logger.warning(f"Frontend build directory not found at {FRONTEND_DIR}")
-    logger.warning("Only the API will be served")
+    logger.warning("Checking if we need to create the directory...")
+
+    # Check if the frontend source directory exists
+    frontend_src_dir = os.path.join(os.path.dirname(__file__), "frontend", "src")
+    if os.path.exists(frontend_src_dir):
+        logger.warning("Frontend source directory exists, but build directory does not.")
+        logger.warning("This might indicate that the frontend has not been built yet.")
+        logger.warning("Only the API will be served")
+    else:
+        logger.warning("Frontend source directory not found either.")
+        logger.warning("This might indicate that the frontend code is not available.")
+        logger.warning("Only the API will be served")
+
     HAS_FRONTEND = False
 else:
     logger.info(f"Frontend build directory found at {FRONTEND_DIR}")
@@ -50,7 +62,7 @@ app.mount("/api", api_app)
 if HAS_FRONTEND:
     # Mount the static files directory
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
-    
+
     # Serve the index.html for all other routes
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
@@ -64,7 +76,7 @@ if HAS_FRONTEND:
 if __name__ == "__main__":
     # Get the port from environment variable or use default
     port = int(os.environ.get("PORT", 8000))
-    
+
     # Run the server
     logger.info(f"Starting server on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
