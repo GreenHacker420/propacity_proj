@@ -345,7 +345,7 @@ class GeminiService:
 
     def analyze_sentiment(self, text: str) -> Dict[str, Any]:
         """
-        Analyze sentiment of text using Gemini API.
+        Analyze sentiment of text using local processing (not Gemini API).
 
         Args:
             text: The text to analyze
@@ -353,126 +353,9 @@ class GeminiService:
         Returns:
             Dictionary with sentiment analysis results
         """
-        # Check for any condition that would prevent API use and return fallback immediately
-        if not self.available:
-            logger.warning("Gemini API not available for sentiment analysis")
-            return self._local_sentiment_analysis(text)
-
-        # Check cache first using the new cache method
-        cached_result = self._get_from_cache(text, "sentiment")
-        if cached_result:
-            return cached_result
-
-        # Combined check for circuit breaker and rate limiting
-        circuit_open = self._check_circuit_breaker()
-        rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
-
-        if circuit_open or rate_limited:
-            if circuit_open:
-                logger.info("Circuit breaker open. Using fallback sentiment analysis.")
-            else:
-                logger.info(f"Using fallback sentiment analysis due to rate limiting (resets in {int(self.rate_limit_reset_time - time.time())} seconds)")
-
-            # Use local sentiment analysis as fallback
-            score = self._local_sentiment_analysis(text)
-            self.sentiment_cache[text] = score
-            return score
-
-        try:
-            start_time = time.time()
-
-            # Apply throttling before making the API call
-            self._throttle_requests()
-
-            # Improved prompt with explicit JSON formatting instructions
-            prompt = f"""
-            Analyze the sentiment of the following text and return a valid JSON object with:
-            - "score": a float between 0 (negative) and 1 (positive)
-            - "label": one of "POSITIVE", "NEGATIVE", or "NEUTRAL"
-            - "confidence": a float between 0 and 1 indicating confidence in the analysis
-
-            Example of expected format:
-            {{"score": 0.8, "label": "POSITIVE", "confidence": 0.9}}
-
-            Text: "{text}"
-
-            IMPORTANT: Return ONLY the JSON object with no markdown formatting, no ```json tags, and no other text.
-            Use double quotes for all keys and string values.
-            """
-
-            # Track API call performance
-            api_start_time = time.time()
-            response = self.model.generate_content(prompt)
-            api_time = time.time() - api_start_time
-
-            # Update performance metrics
-            self.total_api_time += api_time
-            self.total_api_calls += 1
-            self.avg_response_time = self.total_api_time / self.total_api_calls
-
-            # Log performance metrics periodically
-            if self.total_api_calls % 10 == 0:
-                logger.info(f"Gemini API performance: avg_time={self.avg_response_time:.2f}s, " +
-                           f"calls={self.total_api_calls}, cache_hits={self.cache_hits}, " +
-                           f"cache_misses={self.cache_misses}")
-
-            # Log this specific call's performance
-            logger.info(f"Gemini API call for sentiment analysis took {api_time:.2f}s")
-
-            # Extract JSON from response
-            try:
-                # Try to parse the response text as JSON
-                result = json.loads(response.text)
-            except json.JSONDecodeError:
-                # If parsing fails, try to extract JSON from the text
-                response_text = response.text.strip()
-                if response_text.startswith("```json"):
-                    response_text = response_text.replace("```json", "", 1)
-                if response_text.endswith("```"):
-                    response_text = response_text.rsplit("```", 1)[0]
-                response_text = response_text.strip()
-                result = json.loads(response_text)
-
-            processing_time = time.time() - start_time
-            logger.info(f"Gemini sentiment analysis completed in {processing_time:.2f} seconds")
-
-            # Reset failure counter on success
-            self.consecutive_failures = 0
-
-            # Cache the result with the new method
-            self._add_to_cache(text, result, "sentiment")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error in Gemini sentiment analysis: {str(e)}")
-
-            # Check if this is a rate limit error
-            if "429" in str(e) or "quota" in str(e).lower():
-                self.consecutive_failures += 1
-                wait_time = min(300, self.initial_wait_time * (self.backoff_factor ** (self.consecutive_failures - 1)))
-
-                # Set rate limiting flags
-                self.rate_limited = True
-                self.rate_limit_reset_time = time.time() + wait_time
-
-                logger.warning(f"Rate limit exceeded. Using fallback for {wait_time} seconds.")
-
-                # Check if we should open the circuit breaker
-                if self.consecutive_failures >= self.failure_threshold:
-                    self._open_circuit()
-            else:
-                # For non-rate-limit errors, still increment failure counter but with less weight
-                self.consecutive_failures += 0.5
-
-                # Check if we should open the circuit breaker
-                if self.consecutive_failures >= self.failure_threshold:
-                    self._open_circuit()
-
-            # Use local sentiment analysis as fallback
-            score = self._local_sentiment_analysis(text)
-            self._add_to_cache(text, score, "sentiment")
-            return score
+        # Always use local sentiment analysis
+        logger.info("Using local sentiment analysis (Gemini reserved for analysis generation only)")
+        return self._local_sentiment_analysis(text)
 
     def _parallel_local_sentiment_analysis(self, reviews: List[str], callback=None) -> List[Dict[str, Any]]:
         """

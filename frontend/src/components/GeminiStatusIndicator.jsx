@@ -16,7 +16,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
     try {
       const geminiStatus = await api.getGeminiStatus();
       setStatus(geminiStatus);
-      
+
       // Set time remaining
       setTimeRemaining({
         rateLimit: geminiStatus.rate_limit_reset_in || 0,
@@ -24,6 +24,14 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
       });
     } catch (error) {
       console.error('Error fetching Gemini status:', error);
+      // Set a default status when the endpoint is not available
+      setStatus({
+        available: false,
+        model: 'unavailable',
+        rate_limited: false,
+        circuit_open: false,
+        using_local_processing: true
+      });
     } finally {
       setLoading(false);
     }
@@ -32,27 +40,27 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
   // Update countdown timers
   useEffect(() => {
     if (!status) return;
-    
+
     const timer = setInterval(() => {
       setTimeRemaining(prev => ({
         rateLimit: Math.max(0, prev.rateLimit - 1),
         circuit: Math.max(0, prev.circuit - 1)
       }));
     }, 1000);
-    
+
     return () => clearInterval(timer);
   }, [status]);
 
   // Fetch status on mount and periodically
   useEffect(() => {
     fetchStatus();
-    
+
     const interval = setInterval(fetchStatus, refreshInterval);
     return () => clearInterval(interval);
   }, [refreshInterval]);
 
   if (loading) return null;
-  
+
   // If everything is normal, don't show anything
   if (status && !status.rate_limited && !status.circuit_open && status.available) {
     return null;
@@ -72,9 +80,9 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
       className={`bg-gradient-to-r ${
-        status?.circuit_open 
-          ? 'from-orange-50 to-orange-100 border-orange-200' 
-          : status?.rate_limited 
+        status?.circuit_open
+          ? 'from-orange-50 to-orange-100 border-orange-200'
+          : status?.rate_limited
             ? 'from-amber-50 to-amber-100 border-amber-200'
             : 'from-red-50 to-red-100 border-red-200'
       } rounded-lg p-4 shadow-md border ${className}`}
@@ -82,9 +90,9 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
       <div className="flex items-center space-x-3">
         <div className="flex-shrink-0">
           <div className={`p-2 rounded-full ${
-            status?.circuit_open 
-              ? 'bg-orange-100' 
-              : status?.rate_limited 
+            status?.circuit_open
+              ? 'bg-orange-100'
+              : status?.rate_limited
                 ? 'bg-amber-100'
                 : 'bg-red-100'
           }`}>
@@ -99,22 +107,22 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
         </div>
         <div className="flex-1">
           <h3 className={`text-sm font-medium ${
-            status?.circuit_open 
-              ? 'text-orange-800' 
-              : status?.rate_limited 
+            status?.circuit_open
+              ? 'text-orange-800'
+              : status?.rate_limited
                 ? 'text-amber-800'
                 : 'text-red-800'
           }`}>
-            {status?.circuit_open 
-              ? 'Circuit Breaker Active' 
-              : status?.rate_limited 
+            {status?.circuit_open
+              ? 'Circuit Breaker Active'
+              : status?.rate_limited
                 ? 'API Rate Limit Reached'
                 : 'Gemini API Unavailable'}
           </h3>
           <div className={`mt-1 text-xs ${
-            status?.circuit_open 
-              ? 'text-orange-700' 
-              : status?.rate_limited 
+            status?.circuit_open
+              ? 'text-orange-700'
+              : status?.rate_limited
                 ? 'text-amber-700'
                 : 'text-red-700'
           }`}>
@@ -126,7 +134,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             {status?.rate_limited && (
               <div className="flex items-center">
                 <ExclamationTriangleIcon className="h-4 w-4 text-amber-500 mr-1" />
@@ -135,7 +143,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             {!status?.available && !status?.circuit_open && !status?.rate_limited && (
               <div className="flex items-center">
                 <ExclamationTriangleIcon className="h-4 w-4 text-red-500 mr-1" />
@@ -144,7 +152,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             {/* Time remaining for circuit breaker */}
             {status?.circuit_open && timeRemaining.circuit > 0 && (
               <div className="flex items-center mt-1">
@@ -154,7 +162,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             {/* Time remaining for rate limit */}
             {status?.rate_limited && timeRemaining.rateLimit > 0 && (
               <div className="flex items-center mt-1">
@@ -164,7 +172,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             {/* Model info */}
             {status?.model && (
               <div className="mt-2 flex items-center">
@@ -174,14 +182,14 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
                 </span>
               </div>
             )}
-            
+
             <div className="mt-2 text-xs">
               <span className="font-medium">Note:</span> The system is automatically using local processing methods.
             </div>
           </div>
         </div>
       </div>
-      
+
       {/* Progress bar for circuit breaker */}
       {status?.circuit_open && timeRemaining.circuit > 0 && status?.circuit_reset_in && (
         <div className="mt-2 bg-white rounded-full h-1.5 overflow-hidden">
@@ -193,7 +201,7 @@ const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
           />
         </div>
       )}
-      
+
       {/* Progress bar for rate limit */}
       {status?.rate_limited && timeRemaining.rateLimit > 0 && status?.rate_limit_reset_in && (
         <div className="mt-2 bg-white rounded-full h-1.5 overflow-hidden">

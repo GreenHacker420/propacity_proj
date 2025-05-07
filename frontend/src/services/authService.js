@@ -46,7 +46,7 @@ export const getMockToken = () => {
 };
 
 // For development, set a mock token if none exists
-if (!getToken() && process.env.NODE_ENV === 'development') {
+if (!getToken() && (import.meta.env.MODE === 'development' || import.meta.env.DEV)) {
   setToken(getMockToken());
 }
 

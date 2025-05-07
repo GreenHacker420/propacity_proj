@@ -1,13 +1,8 @@
 import axios from 'axios';
+import { getToken } from './authService';
 
-// Determine if we're in production
-const isProduction = import.meta.env.PROD;
-
-// In production, use the BACKEND_URL from environment variables if available
-// In development, use empty baseURL to leverage the proxy in vite.config.js
-const baseURL = isProduction && import.meta.env.BACKEND_URL
-  ? import.meta.env.BACKEND_URL
-  : '';
+// Always use the direct backend URL to avoid proxy issues
+const baseURL = 'http://localhost:8000';
 
 // Configure axios
 axios.defaults.baseURL = baseURL;
@@ -21,6 +16,9 @@ let apiStatus = {
   quotaExceeded: false,
   retryAfter: null
 };
+
+// Authentication is disabled for now
+// No request interceptor for authentication
 
 // Intercept responses to track API status
 axios.interceptors.response.use(
@@ -90,9 +88,12 @@ const api = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await axios.post('/api/upload', formData, {
+    // Use direct URL to backend to avoid proxy issues
+    const response = await axios.post('http://localhost:8000/api/upload', formData, {
       headers: {
-        'Content-Type': 'multipart/form-data'
+        'Content-Type': 'multipart/form-data',
+        // Explicitly remove any Authorization header
+        'Authorization': ''
       }
     });
 
@@ -186,7 +187,8 @@ const api = {
 
   // Record analysis history
   recordAnalysisHistory: async (sourceType, sourceName, reviewsData, summary) => {
-    await axios.post('/api/history', {
+    // Use direct URL to backend to avoid proxy issues
+    await axios.post('http://localhost:8000/api/history', {
       source_type: sourceType,
       source_name: sourceName,
       record_count: reviewsData.length,

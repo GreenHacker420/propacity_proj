@@ -1,4 +1,5 @@
 import { getToken } from './authService';
+import environment from '../config/environment';
 
 let socket = null;
 let messageHandlers = [];
@@ -11,24 +12,19 @@ let isConnecting = false;
 export const initWebSocket = () => {
   if (socket || isConnecting) return;
 
-  const token = getToken();
-  if (!token) {
-    console.warn('WebSocket connection not established: No authentication token');
-    return;
-  }
+  // Use a mock token for development
+  const mockToken = 'dev_token_123';
 
   isConnecting = true;
 
-  // Get the base URL from the API URL
-  const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = apiUrl.replace(/^https?:/, wsProtocol).replace('/api', '');
+  // Get the base URL from environment config
+  const wsUrl = environment.wsUrl;
 
-  console.log('Connecting to WebSocket at:', `${wsUrl}/ws?token=${token}`);
+  console.log('Connecting to WebSocket at:', `${wsUrl}/ws?token=${mockToken}`);
 
-  // Create WebSocket connection with token
+  // Create WebSocket connection with mock token
   try {
-    socket = new WebSocket(`${wsUrl}/ws?token=${token}`);
+    socket = new WebSocket(`${wsUrl}/ws?token=${mockToken}`);
 
     socket.onopen = () => {
       console.log('WebSocket connection established');

@@ -11,6 +11,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: {
+      // Define process.env for backward compatibility
+      'process.env': {
+        REACT_APP_API_URL: JSON.stringify(env.VITE_API_URL || 'http://localhost:8000'),
+      },
+    },
     server: {
       port: 3000,
       proxy: {
@@ -18,12 +24,11 @@ export default defineConfig(({ mode }) => {
           target: backendUrl,
           changeOrigin: true,
           secure: false,
-          ws: true,
           configure: (proxy, _options) => {
             proxy.on('error', (err, _req, _res) => {
               console.log('proxy error', err);
             });
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
+            proxy.on('proxyReq', (_, req, _res) => {
               console.log('Sending Request to the Target:', req.method, req.url);
             });
             proxy.on('proxyRes', (proxyRes, req, _res) => {
@@ -31,7 +36,13 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
-      },
+        '/ws': {
+          target: backendUrl,
+          ws: true,
+          changeOrigin: true,
+          secure: false,
+        }
+      }
     },
     build: {
       outDir: 'dist',

@@ -44,16 +44,10 @@ class AdvancedSentimentAnalyzer:
             self.sentiment_model = None
 
         # Initialize sarcasm detection model
-        try:
-            self.sarcasm_model = pipeline(
-                "text-classification",
-                model="mrm8488/distilroberta-finetuned-sarcasm",
-                return_all_scores=True
-            )
-            logger.info("Sarcasm detection model initialized")
-        except Exception as e:
-            logger.error(f"Error initializing sarcasm model: {str(e)}")
-            self.sarcasm_model = None
+        # Note: The original model "mrm8488/distilroberta-finetuned-sarcasm" is no longer available
+        # We'll use rule-based sarcasm detection instead
+        logger.info("Using rule-based sarcasm detection (Hugging Face model unavailable)")
+        self.sarcasm_model = None
 
         # Initialize spaCy for context analysis
         try:

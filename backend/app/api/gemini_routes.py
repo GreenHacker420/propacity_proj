@@ -2,185 +2,34 @@
 Routes for Gemini API integration.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException
+from typing import Dict, Any
 import logging
-import time
-from sqlalchemy.orm import Session
-
-from .gemini_models import (
-    GeminiSentimentRequest,
-    GeminiSentimentResponse,
-    GeminiBatchRequest,
-    GeminiBatchResponse,
-    GeminiInsightRequest,
-    GeminiInsightResponse,
-    GeminiStatusResponse
-)
-from ..services.gemini_service import GeminiService
-from ..services.mongo_service import MongoService
-from ..auth.mongo_auth import get_current_active_user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini service
-gemini_service = GeminiService()
-
 router = APIRouter(prefix="/gemini", tags=["gemini"])
 
-@router.post("/sentiment", response_model=GeminiSentimentResponse)
-async def analyze_sentiment(
-    request: GeminiSentimentRequest,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Analyze sentiment of text using Google's Gemini API.
-
-    This endpoint provides fast sentiment analysis using Gemini's advanced language models.
-    """
-    try:
-        if not gemini_service.available:
-            raise HTTPException(status_code=503, detail="Gemini API service is not available")
-
-        start_time = time.time()
-        result = gemini_service.analyze_sentiment(request.text)
-        processing_time = time.time() - start_time
-
-        # Add processing time to the result
-        result["processing_time"] = processing_time
-
-        # Store the review in MongoDB
-        MongoService.store_review(
-            text=request.text,
-            sentiment_score=result["score"],
-            sentiment_label=result["label"],
-            user_id=str(current_user["_id"])
-        )
-
-        # Store processing time in MongoDB
-        MongoService.store_processing_time(
-            operation="gemini_sentiment_analysis",
-            record_count=1,
-            duration_seconds=processing_time
-        )
-
-        return result
-    except Exception as e:
-        logger.error(f"Error in Gemini sentiment analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/batch", response_model=GeminiBatchResponse)
-async def analyze_batch(
-    request: GeminiBatchRequest,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Analyze multiple texts in batch using Google's Gemini API.
-
-    This endpoint provides fast batch processing for multiple texts.
-    """
-    try:
-        if not gemini_service.available:
-            raise HTTPException(status_code=503, detail="Gemini API service is not available")
-
-        if not request.texts:
-            raise HTTPException(status_code=400, detail="No texts provided")
-
-        start_time = time.time()
-        results = gemini_service.analyze_reviews(request.texts)
-        processing_time = time.time() - start_time
-
-        # Create response with processing time
-        response = {
-            "results": results,
-            "processing_time": processing_time
-        }
-
-        # Store reviews in MongoDB
-        for i, text in enumerate(request.texts):
-            if i < len(results):
-                MongoService.store_review(
-                    text=text,
-                    sentiment_score=results[i]["score"],
-                    sentiment_label=results[i]["label"],
-                    user_id=str(current_user["_id"])
-                )
-
-        # Store processing time in MongoDB
-        MongoService.store_processing_time(
-            operation="gemini_batch_analysis",
-            record_count=len(request.texts),
-            duration_seconds=processing_time
-        )
-
-        return response
-    except Exception as e:
-        logger.error(f"Error in Gemini batch analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/insights", response_model=GeminiInsightResponse)
-async def extract_insights(
-    request: GeminiInsightRequest,
-    current_user: dict = Depends(get_current_active_user)
-):
-    """
-    Extract insights from a collection of reviews using Google's Gemini API.
-
-    This endpoint provides advanced analysis to extract key insights, pain points,
-    feature requests, and positive aspects from a collection of reviews.
-    """
-    try:
-        if not gemini_service.available:
-            raise HTTPException(status_code=503, detail="Gemini API service is not available")
-
-        if not request.reviews:
-            raise HTTPException(status_code=400, detail="No reviews provided")
-
-        start_time = time.time()
-        result = gemini_service.extract_insights(request.reviews)
-        processing_time = time.time() - start_time
-
-        # Add processing time to the result
-        result["processing_time"] = processing_time
-
-        # Store analysis history in MongoDB
-        MongoService.store_analysis_history(
-            source_type="api",
-            source_name="gemini_insights",
-            record_count=len(request.reviews),
-            avg_sentiment_score=0.5,  # We don't have this information
-            pain_point_count=len(result.get("pain_points", [])),
-            feature_request_count=len(result.get("feature_requests", [])),
-            positive_feedback_count=len(result.get("positive_aspects", [])),
-            summary=result,
-            user_id=str(current_user["_id"])
-        )
-
-        # Store processing time in MongoDB
-        MongoService.store_processing_time(
-            operation="gemini_insight_extraction",
-            record_count=len(request.reviews),
-            duration_seconds=processing_time
-        )
-
-        return result
-    except Exception as e:
-        logger.error(f"Error in Gemini insight extraction: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/status", response_model=GeminiStatusResponse)
+@router.get("/status")
 async def get_gemini_status():
     """
     Get the current status of the Gemini API service.
 
-    This endpoint provides information about the Gemini API service status,
-    including whether it's available, rate limited, or if the circuit breaker is open.
+    This endpoint provides information about the Gemini API service status.
     """
     try:
-        status = gemini_service.get_service_status()
-        return status
+        # Return a default status since we're in development mode
+        return {
+            "available": False,
+            "model": "gemini-2.0-flash",
+            "rate_limited": False,
+            "circuit_open": False,
+            "using_local_processing": True,
+            "rate_limit_reset_in": 0,
+            "circuit_reset_in": 0
+        }
     except Exception as e:
         logger.error(f"Error getting Gemini service status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

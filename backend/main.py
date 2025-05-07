@@ -17,63 +17,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import core modules
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+app_dir = os.path.join(current_dir, "app")
+if os.path.exists(app_dir) and current_dir not in sys.path:
+    sys.path.append(current_dir)
+    logger.info(f"Added {current_dir} to sys.path")
+
 try:
-    # First try the direct import (for local development)
     from app.api.routes import router as api_router
     from app.api.timing_routes import router as timing_router
     from app.api.history_routes import router as history_router
     from app.api.sentiment_routes import router as sentiment_router
     from app.api.weekly_routes import router as weekly_router
+    from app.api.websocket_routes import router as websocket_router
     from app.utils.exceptions import ReviewSystemException
     from app.mongodb import init_mongodb
     logger.info("Successfully imported app modules")
-except ModuleNotFoundError:
-    # If that fails, try to import using a different path (for deployment)
-    import sys
-    logger.info(f"Current sys.path: {sys.path}")
+except ModuleNotFoundError as e:
+    logger.error(f"Error importing modules: {str(e)}")
+    raise
 
-    # Try to adjust the path
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    app_dir = os.path.join(current_dir, "app")
-    if os.path.exists(app_dir) and app_dir not in sys.path:
-        sys.path.append(current_dir)
-        logger.info(f"Added {current_dir} to sys.path")
-
-    # Now try importing with the adjusted path
-    from backend.app.api.routes import router as api_router
-    from backend.app.api.timing_routes import router as timing_router
-    from backend.app.api.history_routes import router as history_router
-    from backend.app.api.sentiment_routes import router as sentiment_router
-    from backend.app.api.weekly_routes import router as weekly_router
-    from backend.app.utils.exceptions import ReviewSystemException
-    from backend.app.mongodb import init_mongodb
-    logger.info("Successfully imported backend.app modules")
-
-# Try to import Gemini routes
+# Import Gemini routes
 try:
-    try:
-        # First try the direct import (for local development)
-        from app.api.gemini_routes import router as gemini_router
-        logger.info("Successfully imported Gemini routes from app.api")
-    except ModuleNotFoundError:
-        # If that fails, try to import using a different path (for deployment)
-        from backend.app.api.gemini_routes import router as gemini_router
-        logger.info("Successfully imported Gemini routes from backend.app.api")
+    from app.api.gemini_routes import router as gemini_router
+    logger.info("Successfully imported Gemini routes from app.api")
     GEMINI_AVAILABLE = True
-except ImportError:
-    logger.warning("Gemini routes could not be imported. Gemini API will be disabled.")
+except ImportError as e:
+    logger.warning(f"Gemini routes could not be imported: {str(e)}. Gemini API will be disabled.")
     GEMINI_AVAILABLE = False
 
 # Import MongoDB
 try:
-    try:
-        # First try the direct import (for local development)
-        from app.mongodb import get_client
-        logger.info("Successfully imported MongoDB client from app.mongodb")
-    except ModuleNotFoundError:
-        # If that fails, try to import using a different path (for deployment)
-        from backend.app.mongodb import get_client
-        logger.info("Successfully imported MongoDB client from backend.app.mongodb")
+    from app.mongodb import get_client
+    logger.info("Successfully imported MongoDB client from app.mongodb")
+
+    # Set development mode for testing without MongoDB
+    if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+        logger.warning("Running in DEVELOPMENT_MODE - MongoDB connection errors will be handled gracefully")
+        os.environ["DEVELOPMENT_MODE"] = "true"
 
     # Test MongoDB connection
     client = get_client()
@@ -81,15 +63,27 @@ try:
     MONGODB_AVAILABLE = True
     logger.info("MongoDB connection successful")
 except Exception as e:
-    logger.error(f"MongoDB connection failed: {str(e)}. Application cannot function without MongoDB.")
-    raise
+    if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+        logger.warning(f"MongoDB connection failed: {str(e)}. Running with limited functionality in development mode.")
+        MONGODB_AVAILABLE = False
+    else:
+        logger.error(f"MongoDB connection failed: {str(e)}. Set DEVELOPMENT_MODE=true to run with limited functionality.")
+        # In production, we still want to fail if MongoDB is not available
+        raise
 
 # Define lifespan context manager for FastAPI
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: initialize MongoDB
     logger.info("Starting up the application...")
-    await init_mongodb()
+    try:
+        await init_mongodb()
+    except Exception as e:
+        if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+            logger.warning(f"MongoDB initialization failed: {str(e)}. Running with limited functionality in development mode.")
+        else:
+            logger.error(f"MongoDB initialization failed: {str(e)}. Set DEVELOPMENT_MODE=true to run with limited functionality.")
+            raise
     yield
     # Shutdown: nothing to do here
     logger.info("Shutting down the application...")
@@ -233,6 +227,10 @@ if AUTH_AVAILABLE:
     app.include_router(auth_router, prefix="/api")
 else:
     logger.warning("Authentication routes are not available")
+
+# Include WebSocket routes
+logger.info("Including WebSocket routes")
+app.include_router(websocket_router)
 
 # Health check endpoint removed for production
 

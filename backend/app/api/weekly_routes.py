@@ -105,10 +105,23 @@ async def get_priority_insights(
                 # No need to generate a new summary as we'll use the actual analyzed data
 
             # Now get the insights
-            insights = await weekly_service.get_priority_insights(
-                source_type=source_type,
-                user_id=current_user.get("id") if current_user else None
-            )
+            try:
+                insights = await weekly_service.get_priority_insights(
+                    source_type=source_type,
+                    user_id=current_user.get("id") if current_user else None
+                )
+            except Exception as e:
+                logger.error(f"Error getting priority insights: {str(e)}")
+                logger.warning(f"Error getting insights, returning empty data: {str(e)}")
+                # Return empty data structure
+                insights = PriorityInsights(
+                    high_priority_items=[],
+                    trending_topics=[],
+                    sentiment_trends={},
+                    action_items=[],
+                    risk_areas=[],
+                    opportunity_areas=[]
+                )
 
             # Convert the Pydantic model to a dictionary
             if isinstance(insights, list):

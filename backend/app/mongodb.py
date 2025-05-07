@@ -18,8 +18,10 @@ load_dotenv()
 
 # Get MongoDB connection string from environment
 MONGODB_URI = os.getenv("MONGODB_URI")
+# For development, we'll allow the app to start without MongoDB
 if not MONGODB_URI:
-    raise ValueError("MONGODB_URI environment variable is not set")
+    logger.warning("MONGODB_URI environment variable is not set. Using development mode with limited functionality.")
+    MONGODB_URI = "mongodb://localhost:27017/product_reviews"  # Default for development
 
 # MongoDB client instance
 _client: Optional[MongoClient] = None
@@ -28,10 +30,10 @@ async def init_mongodb() -> bool:
     """
     Initialize MongoDB connection and verify it works.
     This function is called during application startup.
-    
+
     Returns:
         bool: True if initialization is successful
-        
+
     Raises:
         ConnectionFailure: If connection to MongoDB fails
         ServerSelectionTimeoutError: If server selection times out
@@ -43,15 +45,15 @@ async def init_mongodb() -> bool:
             raise ValueError("Invalid MongoDB URI format")
 
         client = get_client()
-        
+
         # Test connection with timeout
         client.admin.command('ping', serverSelectionTimeoutMS=5000)
         logger.info("MongoDB connection initialized successfully")
-        
+
         # Initialize collections if they don't exist
         db = get_database()
         collections = db.list_collection_names()
-        
+
         required_collections = [
             "users",
             "reviews",
@@ -60,18 +62,18 @@ async def init_mongodb() -> bool:
             "weekly_summaries",
             "processing_times"
         ]
-        
+
         for collection in required_collections:
             if collection not in collections:
                 db.create_collection(collection)
                 logger.info(f"Created collection: {collection}")
             else:
                 logger.debug(f"Collection already exists: {collection}")
-        
+
         # Verify database access
         db_stats = db.command("dbStats")
         logger.info(f"Database stats: {db_stats}")
-        
+
         return True
     except ConnectionFailure as e:
         logger.error(f"Failed to connect to MongoDB: {str(e)}")
@@ -86,23 +88,32 @@ async def init_mongodb() -> bool:
 def get_client() -> MongoClient:
     """
     Get or create a MongoDB client instance.
-    
+
     Returns:
         MongoClient: MongoDB client instance
-        
+
     Raises:
         ConnectionFailure: If connection to MongoDB fails
         ServerSelectionTimeoutError: If server selection times out
     """
     global _client
     if _client is None:
+        # In development mode, we'll create a mock client immediately
+        if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+            logger.warning("Running in DEVELOPMENT_MODE with mock MongoDB client")
+            from unittest.mock import MagicMock
+            _client = MagicMock()
+            return _client
+
         try:
             logger.info("Connecting to MongoDB Atlas...")
             _client = MongoClient(
                 MONGODB_URI,
-                serverSelectionTimeoutMS=5000,  # 5 second timeout
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000
+                serverSelectionTimeoutMS=3000,  # 3 second timeout (reduced for faster failure)
+                connectTimeoutMS=3000,
+                socketTimeoutMS=3000,
+                retryWrites=True,
+                retryReads=True
             )
             # Ping the database to verify connection
             _client.admin.command('ping')
@@ -121,13 +132,13 @@ def get_client() -> MongoClient:
 def get_database(db_name: str = "product_reviews"):
     """
     Get a MongoDB database instance.
-    
+
     Args:
         db_name (str): Name of the database
-        
+
     Returns:
         Database: MongoDB database instance
-        
+
     Raises:
         ConnectionFailure: If connection to MongoDB fails
     """
@@ -144,14 +155,14 @@ def get_database(db_name: str = "product_reviews"):
 def get_collection(collection_name: str, db_name: str = "product_reviews"):
     """
     Get a MongoDB collection instance.
-    
+
     Args:
         collection_name (str): Name of the collection
         db_name (str): Name of the database
-        
+
     Returns:
         Collection: MongoDB collection instance
-        
+
     Raises:
         ConnectionFailure: If connection to MongoDB fails
     """
@@ -180,20 +191,20 @@ def close_connection():
 async def get_connection_status() -> Dict[str, Any]:
     """
     Get the current MongoDB connection status.
-    
+
     Returns:
         Dict[str, Any]: Connection status information
     """
     try:
         client = get_client()
         db = get_database()
-        
+
         # Get server status
         server_status = client.admin.command("serverStatus")
-        
+
         # Get database stats
         db_stats = db.command("dbStats")
-        
+
         # Get collection stats
         collections = db.list_collection_names()
         collection_stats = {}
@@ -202,7 +213,7 @@ async def get_connection_status() -> Dict[str, Any]:
                 collection_stats[collection] = db.command("collStats", collection)
             except Exception as e:
                 logger.warning(f"Could not get stats for collection {collection}: {str(e)}")
-        
+
         return {
             "status": "connected",
             "server_info": {

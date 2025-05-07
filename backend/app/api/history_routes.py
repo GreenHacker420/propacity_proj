@@ -23,7 +23,7 @@ router = APIRouter(
 # Get MongoDB collection
 history_collection = get_collection("analysis_history")
 
-@router.post("", response_model=AnalysisHistoryResponse)  # This will be /history
+@router.post("", response_model=dict)  # This will be /history
 async def record_analysis(
     request: Request,
     current_user: Optional[dict] = None  # Make authentication optional
@@ -52,13 +52,12 @@ async def record_analysis(
         # Insert into database
         result = history_collection.insert_one(history_record)
 
-        # Get the inserted record
-        inserted_record = history_collection.find_one({"_id": result.inserted_id})
-
-        # Create response object using the from_mongo method
-        response_data = AnalysisHistoryResponse.from_mongo(inserted_record)
-
-        return response_data
+        # Return a simple success response
+        return {
+            "success": True,
+            "id": str(result.inserted_id),
+            "message": "Analysis history recorded successfully"
+        }
     except Exception as e:
         logger.error(f"Error recording analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

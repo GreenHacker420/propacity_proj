@@ -27,16 +27,16 @@ scraper = Scraper()
 visualizer = Visualizer()
 
 @router.post("/upload", response_model=List[ReviewResponse])
-async def upload_csv(file: UploadFile = File(...), current_user: Optional[dict] = Depends(get_current_active_user)):
+async def upload_csv(file: UploadFile = File(...)):
     """
     Upload and process a CSV file containing reviews.
 
     This endpoint accepts CSV files with various formats and automatically maps columns.
     At minimum, the CSV must contain text content for reviews.
     """
-    # Get user ID for WebSocket updates
-    user_id = str(current_user["_id"]) if current_user else None
-    logger.info(f"Received file upload: {file.filename}")
+    # Always use the mock user ID for WebSocket updates
+    user_id = "dev_user_123"
+    logger.info(f"Received file upload: {file.filename} with mock user ID: {user_id}")
 
     if not file.filename.lower().endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
@@ -487,10 +487,9 @@ async def upload_csv(file: UploadFile = File(...), current_user: Optional[dict] 
         texts = [review.text for review in reviews]
         metadata_list = [review.metadata for review in reviews]
 
-        # Add user_id to metadata for WebSocket updates
-        if user_id:
-            for metadata in metadata_list:
-                metadata['user_id'] = user_id
+        # Always add the mock user_id to metadata for WebSocket updates
+        for metadata in metadata_list:
+            metadata['user_id'] = user_id
 
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} reviews from CSV in batch")
