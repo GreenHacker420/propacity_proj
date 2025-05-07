@@ -1,8 +1,16 @@
 import axios from 'axios';
 
-// Configure axios to use the proxy defined in vite.config.js
-// The proxy will forward requests to the backend
-axios.defaults.baseURL = ''; // Empty base URL to use the current origin
+// Determine if we're in production
+const isProduction = import.meta.env.PROD;
+
+// In production, use the BACKEND_URL from environment variables if available
+// In development, use empty baseURL to leverage the proxy in vite.config.js
+const baseURL = isProduction && import.meta.env.BACKEND_URL
+  ? import.meta.env.BACKEND_URL
+  : '';
+
+// Configure axios
+axios.defaults.baseURL = baseURL;
 axios.defaults.withCredentials = true;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 

@@ -1,5 +1,6 @@
 # Python version compatibility
-# Requires Python >=3.9, <3.13 for best compatibility with all packages
+# Requires Python 3.11 for best compatibility with all packages
+python_version = "3.11"
 fastapi>=0.95.0
 uvicorn>=0.22.0
 python-multipart>=0.0.5

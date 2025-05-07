@@ -2,6 +2,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+import os
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -17,6 +23,7 @@ from app.api.history_routes import router as history_router
 from app.api.sentiment_routes import router as sentiment_router
 from app.api.weekly_routes import router as weekly_router
 from app.utils.exceptions import ReviewSystemException
+from app.mongodb import init_mongodb
 
 # Try to import Gemini routes
 try:
@@ -37,6 +44,16 @@ try:
 except Exception as e:
     logger.error(f"MongoDB connection failed: {str(e)}. Application cannot function without MongoDB.")
     raise
+
+# Define lifespan context manager for FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize MongoDB
+    logger.info("Starting up the application...")
+    await init_mongodb()
+    yield
+    # Shutdown: nothing to do here
+    logger.info("Shutting down the application...")
 
 # Set database availability
 DATABASE_AVAILABLE = MONGODB_AVAILABLE
@@ -85,22 +102,50 @@ if MONGODB_AVAILABLE:
 else:
     logger.warning("MongoDB is not available")
 
+# Create FastAPI app with lifespan
 app = FastAPI(
-    title="AI-Powered Feedback Analyzer",
-    description="Advanced API for analyzing product reviews and generating actionable insights using AI",
-    version="2.0.0"
+    title="Product Pulse API",
+    description="AI-Powered Feedback Analysis for Product Managers",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-# Configure CORS
-origins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://localhost:3005"]
+# Configure CORS for both development and production
+frontend_url = os.getenv("FRONTEND_URL", "")
+origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
+    "http://localhost:3005",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://127.0.0.1:3003",
+    "http://127.0.0.1:3004",
+    "http://127.0.0.1:5173"
+]
+
+# Add production URLs if available
+if frontend_url:
+    origins.append(frontend_url)
+    # Also add https version
+    if frontend_url.startswith("http://"):
+        origins.append(frontend_url.replace("http://", "https://"))
+
 logger.info(f"Configuring CORS with allowed origins: {origins}")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,  # React dev servers
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+
 
 # Exception handler
 @app.exception_handler(ReviewSystemException)
