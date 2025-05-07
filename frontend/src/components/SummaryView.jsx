@@ -104,7 +104,13 @@ const SummaryView = ({ summary, onDownloadPDF }) => {
               <ReviewsTable reviews={data.reviews} />
             ) : (
               <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4">
-                <p className="font-medium">No review data available. There might have been an error processing the reviews.</p>
+                <p className="font-medium">No review data available in this view. Try switching to the Weekly PM Summary tab to see insights.</p>
+                <button
+                  onClick={() => setActiveView('weekly')}
+                  className="mt-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-1 px-3 rounded-lg text-sm transition-colors duration-200"
+                >
+                  View Weekly Summary
+                </button>
               </div>
             )}
           </div>
@@ -112,7 +118,10 @@ const SummaryView = ({ summary, onDownloadPDF }) => {
       )}
 
       {activeView === 'weekly' && (
-        <WeeklySummaryView sourceType={data.source_type || 'unknown'} />
+        <WeeklySummaryView
+          sourceType={data.source_type || 'unknown'}
+          key={`weekly-${data.source_type || 'unknown'}`} // Force re-render when source type changes
+        />
       )}
     </div>
   );

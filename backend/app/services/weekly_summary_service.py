@@ -43,12 +43,15 @@ class WeeklySummaryService:
             query["source_name"] = source_name
 
         # Use find method without await, then to_list with await
-        cursor = reviews_collection.find(query)
-        reviews = await cursor.to_list(length=None)
+        # Use a batch size to limit memory usage
+        cursor = reviews_collection.find(query).batch_size(500)
 
-        logger.info(f"Found {len(reviews)} reviews for query: {query}")
+        # Count documents first to check if we have any reviews
+        review_count = await reviews_collection.count_documents(query)
 
-        if not reviews:
+        logger.info(f"Found {review_count} reviews for query: {query}")
+
+        if review_count == 0:
             # Return empty summary instead of generating mock data
             logger.warning("No reviews found for the specified date range.")
             raise ValueError(f"No reviews found for source_type={source_type}, source_name={source_name} in the specified date range.")
@@ -58,11 +61,21 @@ class WeeklySummaryService:
         feature_requests = []
         positive_feedback = []
         total_sentiment = 0
+        total_reviews = 0
         keyword_freq: Dict[str, int] = {}
 
-        # Process reviews in batches to avoid too many concurrent requests
-        for review in reviews:
+        # Store a limited number of reviews for trend analysis
+        reviews_for_trends = []  # Store a limited number of reviews for trend analysis
+
+        # Process reviews in batches using the cursor
+        async for review in cursor:
             try:
+                total_reviews += 1
+
+                # Store a limited number of reviews for trend analysis (max 1000)
+                if len(reviews_for_trends) < 1000:
+                    reviews_for_trends.append(review)
+
                 # Analyze sentiment - use synchronous call
                 sentiment_score = await self.sentiment_analyzer.analyze_sentiment(review["text"])
                 total_sentiment += sentiment_score
@@ -100,11 +113,17 @@ class WeeklySummaryService:
             else:
                 positive_feedback.append(priority_item)
 
-        # Calculate average sentiment
-        avg_sentiment = total_sentiment / len(reviews)
+            # Force garbage collection every 1000 reviews to manage memory
+            if total_reviews % 1000 == 0:
+                import gc
+                gc.collect()
+                logger.info(f"Processed {total_reviews} reviews so far")
 
-        # Generate trend analysis
-        trend_analysis = self._analyze_trends(reviews)
+        # Calculate average sentiment
+        avg_sentiment = total_sentiment / total_reviews if total_reviews > 0 else 0.0
+
+        # Generate trend analysis using the limited set of reviews
+        trend_analysis = self._analyze_trends(reviews_for_trends)
 
         # Generate recommendations
         recommendations = self._generate_recommendations(
@@ -145,7 +164,7 @@ class WeeklySummaryService:
             source_name=source_name,
             start_date=start_date,
             end_date=end_date,
-            total_reviews=len(reviews),
+            total_reviews=total_reviews,
             avg_sentiment_score=avg_sentiment,
             pain_points=pain_points_dicts,
             feature_requests=feature_requests_dicts,
@@ -156,11 +175,30 @@ class WeeklySummaryService:
         )
 
         # Save to database
-        summary_dict = summary.model_dump() if hasattr(summary, 'model_dump') else summary.dict()
-        result = await self.collection.insert_one(summary_dict)
-        summary_dict["_id"] = str(result.inserted_id)
-        summary_dict["created_at"] = datetime.now(timezone.utc)
-        summary_dict["user_id"] = user_id
+        try:
+            # Use model_dump for Pydantic v2
+            if hasattr(summary, 'model_dump'):
+                summary_dict = summary.model_dump()
+            # Fallback to dict for Pydantic v1 (with deprecation warning)
+            else:
+                summary_dict = summary.dict()
+
+            result = await self.collection.insert_one(summary_dict)
+            summary_dict["_id"] = str(result.inserted_id)
+            summary_dict["created_at"] = datetime.now(timezone.utc)
+            summary_dict["user_id"] = user_id
+        except Exception as e:
+            logger.error(f"Error saving summary to database: {str(e)}")
+            # Create a basic dictionary if all else fails
+            summary_dict = {
+                "_id": str(ObjectId()),
+                "created_at": datetime.now(timezone.utc),
+                "user_id": user_id,
+                "source_type": source_type,
+                "source_name": source_name,
+                "total_reviews": total_reviews,
+                "avg_sentiment_score": avg_sentiment
+            }
 
         return WeeklySummaryResponse(**summary_dict)
 

@@ -374,6 +374,9 @@ class TextAnalyzer:
                 # Get sentiment from Gemini in batch with progress reporting
                 gemini_results = self.gemini_service.analyze_reviews(texts, callback=batch_progress_callback)
 
+                # Log completion
+                logger.info(f"Batch sentiment analysis completed for all {len(texts)} reviews")
+
                 processing_time = time.time() - start_time
                 logger.info(f"Gemini batch sentiment analysis completed in {processing_time:.2f} seconds")
 

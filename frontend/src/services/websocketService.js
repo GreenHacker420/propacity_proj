@@ -10,34 +10,36 @@ let isConnecting = false;
  */
 export const initWebSocket = () => {
   if (socket || isConnecting) return;
-  
+
   const token = getToken();
   if (!token) {
     console.warn('WebSocket connection not established: No authentication token');
     return;
   }
-  
+
   isConnecting = true;
-  
+
   // Get the base URL from the API URL
   const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = apiUrl.replace(/^https?:/, wsProtocol).replace('/api', '');
-  
+
+  console.log('Connecting to WebSocket at:', `${wsUrl}/ws?token=${token}`);
+
   // Create WebSocket connection with token
   try {
     socket = new WebSocket(`${wsUrl}/ws?token=${token}`);
-    
+
     socket.onopen = () => {
       console.log('WebSocket connection established');
       isConnecting = false;
-      
+
       // Clear reconnect timer if it exists
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
-      
+
       // Send ping every 30 seconds to keep connection alive
       setInterval(() => {
         if (socket && socket.readyState === WebSocket.OPEN) {
@@ -45,16 +47,16 @@ export const initWebSocket = () => {
         }
       }, 30000);
     };
-    
+
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         // Handle pong message
         if (data.type === 'pong') {
           return;
         }
-        
+
         // Notify all handlers
         messageHandlers.forEach(handler => {
           try {
@@ -67,12 +69,12 @@ export const initWebSocket = () => {
         console.error('Error parsing WebSocket message:', error);
       }
     };
-    
+
     socket.onclose = (event) => {
       console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
       socket = null;
       isConnecting = false;
-      
+
       // Attempt to reconnect after 5 seconds
       if (!reconnectTimer) {
         reconnectTimer = setTimeout(() => {
@@ -81,7 +83,7 @@ export const initWebSocket = () => {
         }, 5000);
       }
     };
-    
+
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
       isConnecting = false;
@@ -100,12 +102,12 @@ export const closeWebSocket = () => {
     socket.close();
     socket = null;
   }
-  
+
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  
+
   messageHandlers = [];
 };
 
@@ -119,9 +121,9 @@ export const addMessageHandler = (handler) => {
     console.error('WebSocket message handler must be a function');
     return () => {};
   }
-  
+
   messageHandlers.push(handler);
-  
+
   // Return function to remove handler
   return () => {
     messageHandlers = messageHandlers.filter(h => h !== handler);
@@ -142,7 +144,7 @@ export const isConnected = () => {
 export const initWebSocketOnLogin = () => {
   // Close existing connection if any
   closeWebSocket();
-  
+
   // Initialize new connection
   initWebSocket();
 };

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -64,10 +63,21 @@ const WeeklySummaryView = ({ sourceType = null }) => {
     );
   }
 
-  if (!insights) {
+  if (!insights ||
+      !insights.high_priority_items ||
+      insights.high_priority_items.length === 0) {
     return (
       <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4 mt-4">
         <p className="font-medium">No weekly summary data available. Try analyzing some reviews first.</p>
+        <p className="text-sm mt-2">The system needs processed review data to generate weekly summaries and insights.</p>
+        <div className="mt-4 p-4 bg-white rounded-lg border border-yellow-100">
+          <h3 className="font-medium text-gray-800 mb-2">Example feedback:</h3>
+          <p className="italic text-gray-600">"No data available"</p>
+          <div className="mt-3 flex items-center">
+            <span className="text-yellow-600 font-medium">Priority: 50%</span>
+            <span className="ml-2 text-sm text-gray-500">Please analyze some reviews first to see insights here</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -212,7 +222,7 @@ const WeeklySummaryView = ({ sourceType = null }) => {
                       dataKey="value"
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     >
-                      {sentimentTrendsData.map((entry, index) => (
+                      {sentimentTrendsData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>

@@ -18,6 +18,7 @@ import GitHubDetails from './components/GitHubDetails';
 import APIStatusIndicator from './components/APIStatusIndicator';
 import APIQuotaDisplay from './components/APIQuotaDisplay';
 import GeminiStatusIndicator from './components/GeminiStatusIndicator';
+import WebSocketBatchProgress from './components/WebSocketBatchProgress';
 
 /**
  * Main App component
@@ -130,6 +131,16 @@ function App() {
               >
                 <div className="card">
                   <h2 className="text-xl font-semibold text-gray-800 mb-4">Processing Your Data</h2>
+
+                  {/* WebSocket Batch Progress */}
+                  <WebSocketBatchProgress
+                    isProcessing={loading}
+                    onComplete={() => {
+                      // This will be called when processing is complete
+                      console.log("Batch processing complete");
+                    }}
+                  />
+
                   <div className="flex justify-center mb-4">
                     <LoadingIndicator type="beat" size={30} text="Processing..." />
                   </div>

@@ -490,8 +490,8 @@ class GeminiService:
         logger.info(f"Starting parallel sentiment analysis for {len(reviews)} reviews")
 
         # Process in batches for better progress reporting
-        if len(reviews) > 200 and callback:
-            batch_size = 200
+        if len(reviews) > 500 and callback:
+            batch_size = 500
             batches = [reviews[i:i+batch_size] for i in range(0, len(reviews), batch_size)]
             results = []
             batch_times = []
@@ -602,20 +602,8 @@ class GeminiService:
         Returns:
             List of dictionaries with analysis results
         """
-        # Early check for circuit breaker or rate limiting to avoid unnecessary processing
-        if not self.available:
-            logger.warning("Gemini API not available for review analysis")
-            return self._parallel_local_sentiment_analysis(reviews)
-
-        # Check if circuit breaker is open
-        if self._check_circuit_breaker():
-            logger.info("Circuit breaker open. Using fallback batch sentiment analysis.")
-            return self._parallel_local_sentiment_analysis(reviews, callback)
-
-        # Check if we're currently rate limited
-        if self.rate_limited and time.time() < self.rate_limit_reset_time:
-            logger.info(f"Using fallback sentiment analysis due to rate limiting (resets in {int(self.rate_limit_reset_time - time.time())} seconds)")
-            return self._parallel_local_sentiment_analysis(reviews)
+        # Log the start of processing
+        logger.info(f"Starting sentiment analysis for {len(reviews)} reviews")
 
         # Check cache first and collect uncached reviews
         results = []
@@ -634,80 +622,48 @@ class GeminiService:
         if not uncached_reviews:
             return results
 
-        # Process reviews in larger batches for better performance
-        if len(uncached_reviews) > 100:
-            logger.info(f"Processing {len(uncached_reviews)} reviews in batches for sentiment analysis")
+        # Process all reviews with parallel processing
+        if len(uncached_reviews) > 0:
+            logger.info(f"Processing {len(uncached_reviews)} reviews with parallel processing")
 
             # Calculate optimal batch size based on review length
             avg_review_length = sum(len(review) for review in uncached_reviews) / len(uncached_reviews)
 
-            # Adjust batch size based on average review length
+            # Adjust batch size based on average review length - increased for better performance
             if avg_review_length < 100:
-                batch_size = 150  # Very short reviews
+                batch_size = 300  # Very short reviews
             elif avg_review_length < 200:
-                batch_size = 100  # Short reviews
+                batch_size = 200  # Short reviews
             elif avg_review_length < 500:
-                batch_size = 75   # Medium reviews
+                batch_size = 150  # Medium reviews
             else:
-                batch_size = 50   # Long reviews
+                batch_size = 100  # Long reviews
 
             logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
 
-            # Split reviews into batches
+            # Split reviews into batches for progress reporting
             batches = [uncached_reviews[i:i+batch_size] for i in range(0, len(uncached_reviews), batch_size)]
             batch_indices = [uncached_indices[i:i+batch_size] for i in range(0, len(uncached_indices), batch_size)]
 
-            # Check circuit breaker state once before processing all batches
-            circuit_open = self._check_circuit_breaker()
-            rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
-
             # Track processing speed for dynamic time estimation
-            batch_times = []
+            start_time = time.time()
             total_processed = 0
 
-            # If circuit is open or rate limited, process all reviews with fallback at once
-            if circuit_open or rate_limited:
-                if circuit_open:
-                    logger.info(f"Circuit breaker open. Using fallback for all {len(reviews)} reviews at once")
-                else:
-                    logger.info(f"Rate limited. Using fallback for all {len(reviews)} reviews at once")
-
-                # Create fallback results for all reviews at once
-                fallback_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in reviews]
-
-                # No need to process batches, just return the fallback results
-                return fallback_results
-
-            # Process each batch normally if circuit is closed and not rate limited
+            # Process all batches with memory optimization
             for i, (batch, indices) in enumerate(zip(batches, batch_indices)):
                 batch_start_time = time.time()
                 logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
 
-                # Check if circuit breaker is open before processing this batch (in case it opened during processing)
-                if self._check_circuit_breaker():
-                    logger.info(f"Circuit breaker open. Using fallback for batch {i+1}/{len(batches)}")
-                    batch_results = self._parallel_local_sentiment_analysis(batch)
-                # Check if we're currently rate limited
-                elif self.rate_limited and time.time() < self.rate_limit_reset_time:
-                    logger.info(f"Rate limited. Using fallback for batch {i+1}/{len(batches)}")
-                    batch_results = self._parallel_local_sentiment_analysis(batch)
-                # Check if processing is too slow (after we have some data)
-                elif len(batch_times) >= 3 and sum(batch_times) / len(batch_times) > 5:
-                    logger.warning(f"Gemini API processing too slow (avg {sum(batch_times)/len(batch_times):.2f}s per batch). Using local processing for remaining batches.")
-                    # Open circuit breaker temporarily
-                    self._open_circuit(timeout=300)  # 5 minutes
-                    batch_results = self._parallel_local_sentiment_analysis(batch)
-                else:
-                    # Process this batch with Gemini API
-                    batch_results = self._analyze_reviews_single_batch(batch)
+                # Process this batch with sentiment analysis
+                batch_results = self._analyze_reviews_single_batch(batch)
 
                 # Calculate batch processing time
                 batch_time = time.time() - batch_start_time
-                batch_times.append(batch_time)
                 total_processed += len(batch)
 
                 # Calculate average processing speed (items per second)
-                avg_speed = total_processed / sum(batch_times) if batch_times else 0
+                elapsed_time = time.time() - start_time
+                avg_speed = total_processed / elapsed_time if elapsed_time > 0 else 0
 
                 # Calculate estimated time remaining
                 remaining_items = len(uncached_reviews) - total_processed
@@ -717,36 +673,28 @@ class GeminiService:
                            f"Avg speed: {avg_speed:.2f} items/sec. " +
                            f"Est. time remaining: {estimated_time_remaining:.1f}s")
 
-                # Update results and cache
+                # Update results and cache - with memory optimization
                 for j, result in enumerate(batch_results):
                     original_index = indices[j]
                     results[original_index] = result
-                    self._add_to_cache(batch[j], result, "sentiment")
+                    # Only cache if text is not too long to save memory
+                    if len(batch[j]) < 5000:  # Only cache texts shorter than 5000 chars
+                        self._add_to_cache(batch[j], result, "sentiment")
 
-                # Add a small delay between batches to avoid rate limiting
-                if i < len(batches) - 1 and not self._check_circuit_breaker() and not self.rate_limited:
-                    time.sleep(0.5)  # Reduced delay to improve performance
+                # Call progress callback if provided
+                if callback:
+                    callback(i+1, len(batches), batch_time, total_processed, avg_speed, estimated_time_remaining)
+
+                # Force garbage collection to free memory
+                if i % 5 == 0:  # Every 5 batches
+                    import gc
+                    gc.collect()
+
+                # No delay between batches for maximum performance
 
             return results
         else:
-            # Check if circuit breaker is open before processing
-            if self._check_circuit_breaker():
-                logger.info(f"Circuit breaker open. Using fallback for single batch with {len(uncached_reviews)} reviews")
-                batch_results = self._parallel_local_sentiment_analysis(uncached_reviews)
-            # Check if we're currently rate limited
-            elif self.rate_limited and time.time() < self.rate_limit_reset_time:
-                logger.info(f"Rate limited. Using fallback for single batch with {len(uncached_reviews)} reviews")
-                batch_results = self._parallel_local_sentiment_analysis(uncached_reviews)
-            else:
-                # Process all uncached reviews in a single batch with Gemini API
-                batch_results = self._analyze_reviews_single_batch(uncached_reviews)
-
-            # Update results and cache
-            for i, result in enumerate(batch_results):
-                original_index = uncached_indices[i]
-                results[original_index] = result
-                self._add_to_cache(uncached_reviews[i], result)
-
+            # All reviews were cached
             return results
 
     def _analyze_reviews_single_batch(self, reviews: List[str]) -> List[Dict[str, Any]]:
@@ -911,8 +859,8 @@ class GeminiService:
             import traceback
             logger.error(f"Detailed error in batch review analysis: {traceback.format_exc()}")
 
-            # Return fallback results
-            return self._parallel_local_sentiment_analysis(reviews)
+            # Return neutral results instead of local processing
+            return [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in reviews]
 
     def extract_insights(self, reviews: List[str]) -> Dict[str, Any]:
         """
@@ -967,16 +915,16 @@ class GeminiService:
                 # Calculate optimal batch size based on review length
                 avg_review_length = sum(len(review) for review in reviews) / len(reviews)
 
-                # Adjust batch size based on average review length
+                # Adjust batch size based on average review length - increased for better performance
                 # Shorter reviews can be processed in larger batches
                 if avg_review_length < 100:
-                    batch_size = 100  # Very short reviews
+                    batch_size = 200  # Very short reviews
                 elif avg_review_length < 200:
-                    batch_size = 75   # Short reviews
+                    batch_size = 150  # Short reviews
                 elif avg_review_length < 500:
-                    batch_size = 50   # Medium reviews
+                    batch_size = 100  # Medium reviews
                 else:
-                    batch_size = 30   # Long reviews
+                    batch_size = 60   # Long reviews
 
                 logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
 
