@@ -44,8 +44,8 @@ The following environment variables need to be set in your Railway project:
 The following configuration files are used for Railway deployment:
 
 - `railway.json`: Main configuration file for Railway
-- `nixpacks.toml`: Configuration for the Nixpacks build system
-- `Procfile`: Defines the command to run the application
+- `Dockerfile`: Defines the container image for deployment
+- `.dockerignore`: Specifies files to exclude from the Docker build
 - `runtime.txt`: Specifies the Python version
 - `.nvmrc`: Specifies the Node.js version
 - `.python-version`: Specifies the Python version
@@ -72,9 +72,9 @@ The following configuration files are used for Railway deployment:
 
 4. **Deploy the application**
 
-   - Railway will automatically deploy your application based on the configuration files
+   - Railway will automatically deploy your application using the Dockerfile
    - The deployment process will:
-     - Install Python 3.11 and Node.js 18
+     - Build a Docker image with Python 3.11 and Node.js 18
      - Install backend dependencies
      - Download NLTK resources
      - Install frontend dependencies
