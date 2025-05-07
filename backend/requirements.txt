@@ -33,3 +33,6 @@ pymongo>=4.5.0
 tweepy>=4.14.0
 python-dotenv>=1.0.0
 backoff==2.2.1
+# Hugging Face Xet Storage for faster model downloads
+hf_xet>=1.0.0
+huggingface_hub[hf_xet]>=0.19.0

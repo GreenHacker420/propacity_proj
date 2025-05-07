@@ -40,8 +40,8 @@ except ModuleNotFoundError:
 
     try:
         # Try importing from the main module directly
-        from main import app as api_app
-        logger.info("Successfully imported main")
+        from backend.app.main import app as api_app
+        logger.info("Successfully imported backend.app.main")
     except ModuleNotFoundError as e:
         logger.error(f"Failed to import main: {e}")
         raise
