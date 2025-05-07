@@ -4,6 +4,9 @@ Script to serve both the backend API and frontend static files.
 This is used in production to serve the entire application from a single process.
 """
 
+# Import fix_path.py to fix Python path issues
+import fix_path
+
 import os
 import logging
 import uvicorn
@@ -20,7 +23,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import the main FastAPI application
-from backend.main import app as api_app
+try:
+    # First try the direct import (for local development)
+    from backend.main import app as api_app
+    logger.info("Successfully imported backend.main")
+except ModuleNotFoundError:
+    # If that fails, try to import using a different path (for deployment)
+    import sys
+    logger.info(f"Current sys.path: {sys.path}")
+
+    # Add the backend directory to the path
+    backend_dir = os.path.join(os.path.dirname(__file__), "backend")
+    if backend_dir not in sys.path:
+        sys.path.append(backend_dir)
+        logger.info(f"Added {backend_dir} to sys.path")
+
+    try:
+        # Try importing from the main module directly
+        from main import app as api_app
+        logger.info("Successfully imported main")
+    except ModuleNotFoundError as e:
+        logger.error(f"Failed to import main: {e}")
+        raise
 
 # Define the path to the frontend build directory
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")
@@ -74,6 +98,13 @@ if HAS_FRONTEND:
             return {"error": "Frontend not built. Please run 'npm run build' in the frontend directory."}
 
 if __name__ == "__main__":
+    # Run the debug script first
+    try:
+        import debug_imports
+        debug_imports.debug_imports()
+    except Exception as e:
+        logger.error(f"Error running debug script: {e}")
+
     # Get the port from environment variable or use default
     port = int(os.environ.get("PORT", 8000))
 

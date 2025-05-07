@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line
+  PieChart, Pie, Cell, ResponsiveContainer
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
@@ -59,7 +59,8 @@ const DataVisualization = ({ data }) => {
   useEffect(() => {
     if (data) {
       try {
-        const { summary } = data;
+        // Handle the case where data is the summary itself or contains a summary property
+        const summary = data.summary || data;
 
         if (!summary) {
           console.error('Summary data is missing');
@@ -81,11 +82,61 @@ const DataVisualization = ({ data }) => {
           return;
         }
 
+        // Log the summary structure to help with debugging
+        console.log('Summary structure:', Object.keys(summary));
+
         // Safely access properties with fallbacks
+        // Handle both normal summary structure and fallback structure from local processing
         const sentimentDistribution = summary.sentiment_distribution || {};
         const classificationDistribution = summary.classification_distribution || {};
         const gameDistribution = summary.game_distribution || {};
         const topKeywords = summary.top_keywords || {};
+
+        // If we're in fallback mode, we might have a different structure
+        // Check if we have the expected properties, if not, create default values
+        if (Object.keys(sentimentDistribution).length === 0 &&
+            summary.pain_points && summary.feature_requests && summary.positive_aspects) {
+          // We're likely in fallback mode with a different data structure
+          console.log('Using fallback data structure for visualization');
+
+          // Create sentiment distribution from pain points and positive aspects
+          const painPointCount = Array.isArray(summary.pain_points) ? summary.pain_points.length : 0;
+          const featureRequestCount = Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0;
+          const positiveCount = Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length : 0;
+
+          // Create synthetic distributions for visualization
+          Object.assign(sentimentDistribution, {
+            negative: painPointCount,
+            neutral: featureRequestCount,
+            positive: positiveCount
+          });
+
+          // Create classification distribution
+          Object.assign(classificationDistribution, {
+            pain_point: painPointCount,
+            feature_request: featureRequestCount,
+            positive_feedback: positiveCount
+          });
+
+          // Create keyword distribution from all points
+          const allPoints = [
+            ...(Array.isArray(summary.pain_points) ? summary.pain_points : []),
+            ...(Array.isArray(summary.feature_requests) ? summary.feature_requests : []),
+            ...(Array.isArray(summary.positive_aspects) ? summary.positive_aspects : [])
+          ];
+
+          // Extract some keywords from the points
+          allPoints.forEach(point => {
+            if (typeof point === 'string') {
+              const words = point.split(' ');
+              words.forEach(word => {
+                if (word.length > 4) {
+                  topKeywords[word] = (topKeywords[word] || 0) + 1;
+                }
+              });
+            }
+          });
+        }
 
         // Prepare sentiment data for pie chart
         const sentimentData = Object.entries(sentimentDistribution).map(([name, value]) => ({
@@ -116,12 +167,25 @@ const DataVisualization = ({ data }) => {
             value: count
           }));
 
+        // Make sure summary has all required properties for the UI
+        const enhancedSummary = {
+          ...summary,
+          // Ensure these properties exist with default values if missing
+          total_reviews: summary.total_reviews ||
+                        (summary.pain_points?.length || 0) +
+                        (summary.feature_requests?.length || 0) +
+                        (summary.positive_aspects?.length || 0) || 0,
+          average_sentiment: summary.average_sentiment || 0.5,
+          game_distribution: summary.game_distribution || gameDistribution,
+          top_keywords: summary.top_keywords || topKeywords
+        };
+
         setChartData({
           sentimentData,
           classificationData,
           gameData,
           keywordData,
-          summary
+          summary: enhancedSummary
         });
       } catch (error) {
         console.error('Error processing visualization data:', error);
@@ -274,7 +338,7 @@ const DataVisualization = ({ data }) => {
                   dataKey="value"
                   animationDuration={1000}
                 >
-                  {sentimentData.map((entry, index) => (
+                  {sentimentData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>

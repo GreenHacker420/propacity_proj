@@ -37,5 +37,8 @@ RUN cd frontend && \
 # Expose the port
 EXPOSE $PORT
 
+# Make start.sh executable
+RUN chmod +x start.sh
+
 # Start the application
-CMD ["python", "serve.py"]
+CMD ["./start.sh"]

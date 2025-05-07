@@ -10,8 +10,9 @@ cmds = [
 [phases.build]
 cmds = [
   "cd backend && python download_nltk_resources.py",
-  "cd frontend && npm run build"
+  "cd frontend && npm run build",
+  "chmod +x start.sh"
 ]
 
 [start]
-cmd = "python serve.py"
+cmd = "./start.sh"

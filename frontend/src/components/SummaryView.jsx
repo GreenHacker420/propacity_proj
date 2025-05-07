@@ -21,24 +21,41 @@ const SummaryView = ({ summary, onDownloadPDF }) => {
     );
   }
 
+  // Log the data structure to help with debugging
+  console.log('Summary data structure:', Object.keys(data));
+
   // Check for API errors in the summary data
   const hasApiError = data.error && data.error_source === "gemini_api";
-  const isQuotaError = hasApiError && data.error.includes("quota");
+  const isQuotaError = hasApiError && data.error && data.error.includes && data.error.includes("quota");
+
+  // Check for rate limit or circuit breaker in the data
+  const isRateLimited = data.rate_limited === true || (data.summary && data.summary.includes && data.summary.includes("Rate limit exceeded"));
+  const isCircuitOpen = data.circuit_open === true || (data.summary && data.summary.includes && data.summary.includes("circuit breaker"));
 
   return (
     <div className="space-y-8">
       {/* API Error Message */}
-      {hasApiError && (
-        <div className={`p-4 rounded-lg mb-4 ${isQuotaError ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+      {(hasApiError || isRateLimited || isCircuitOpen) && (
+        <div className={`p-4 rounded-lg mb-4 ${
+          isQuotaError || isRateLimited
+            ? 'bg-blue-50 border border-blue-200 text-blue-800'
+            : isCircuitOpen
+              ? 'bg-orange-50 border border-orange-200 text-orange-800'
+              : 'bg-yellow-50 border border-yellow-200 text-yellow-800'
+        }`}>
           <p className="font-medium">
-            {isQuotaError
+            {isQuotaError || isRateLimited
               ? 'AI quota exceeded. The summary was generated using basic analysis instead of advanced AI.'
-              : 'There was an issue with the AI service. The summary was generated using basic analysis.'}
+              : isCircuitOpen
+                ? 'Circuit breaker active. The system is temporarily using local processing.'
+                : 'There was an issue with the AI service. The summary was generated using basic analysis.'}
           </p>
           <p className="text-sm mt-2">
-            {isQuotaError
+            {isQuotaError || isRateLimited
               ? 'This happens when the daily limit for AI requests is reached. The system automatically switched to a simpler analysis method.'
-              : 'The system automatically switched to a simpler analysis method.'}
+              : isCircuitOpen
+                ? 'After multiple API failures, the system temporarily switched to local processing to ensure reliability.'
+                : 'The system automatically switched to a simpler analysis method.'}
           </p>
         </div>
       )}

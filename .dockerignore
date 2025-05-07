@@ -33,8 +33,9 @@ npm-debug.log
 yarn-debug.log
 yarn-error.log
 frontend/node_modules/
-frontend/dist/
-frontend/build/
+# Don't exclude frontend/dist/ as we need it for serving static files
+# frontend/dist/
+# frontend/build/
 
 # IDE
 .idea/

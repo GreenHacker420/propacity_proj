@@ -17,17 +17,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import core modules
-from app.api.routes import router as api_router
-from app.api.timing_routes import router as timing_router
-from app.api.history_routes import router as history_router
-from app.api.sentiment_routes import router as sentiment_router
-from app.api.weekly_routes import router as weekly_router
-from app.utils.exceptions import ReviewSystemException
-from app.mongodb import init_mongodb
+try:
+    # First try the direct import (for local development)
+    from app.api.routes import router as api_router
+    from app.api.timing_routes import router as timing_router
+    from app.api.history_routes import router as history_router
+    from app.api.sentiment_routes import router as sentiment_router
+    from app.api.weekly_routes import router as weekly_router
+    from app.utils.exceptions import ReviewSystemException
+    from app.mongodb import init_mongodb
+    logger.info("Successfully imported app modules")
+except ModuleNotFoundError:
+    # If that fails, try to import using a different path (for deployment)
+    import sys
+    logger.info(f"Current sys.path: {sys.path}")
+
+    # Try to adjust the path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir = os.path.join(current_dir, "app")
+    if os.path.exists(app_dir) and app_dir not in sys.path:
+        sys.path.append(current_dir)
+        logger.info(f"Added {current_dir} to sys.path")
+
+    # Now try importing with the adjusted path
+    from backend.app.api.routes import router as api_router
+    from backend.app.api.timing_routes import router as timing_router
+    from backend.app.api.history_routes import router as history_router
+    from backend.app.api.sentiment_routes import router as sentiment_router
+    from backend.app.api.weekly_routes import router as weekly_router
+    from backend.app.utils.exceptions import ReviewSystemException
+    from backend.app.mongodb import init_mongodb
+    logger.info("Successfully imported backend.app modules")
 
 # Try to import Gemini routes
 try:
-    from app.api.gemini_routes import router as gemini_router
+    try:
+        # First try the direct import (for local development)
+        from app.api.gemini_routes import router as gemini_router
+        logger.info("Successfully imported Gemini routes from app.api")
+    except ModuleNotFoundError:
+        # If that fails, try to import using a different path (for deployment)
+        from backend.app.api.gemini_routes import router as gemini_router
+        logger.info("Successfully imported Gemini routes from backend.app.api")
     GEMINI_AVAILABLE = True
 except ImportError:
     logger.warning("Gemini routes could not be imported. Gemini API will be disabled.")
@@ -35,7 +66,15 @@ except ImportError:
 
 # Import MongoDB
 try:
-    from app.mongodb import get_client
+    try:
+        # First try the direct import (for local development)
+        from app.mongodb import get_client
+        logger.info("Successfully imported MongoDB client from app.mongodb")
+    except ModuleNotFoundError:
+        # If that fails, try to import using a different path (for deployment)
+        from backend.app.mongodb import get_client
+        logger.info("Successfully imported MongoDB client from backend.app.mongodb")
+
     # Test MongoDB connection
     client = get_client()
     client.admin.command('ping')

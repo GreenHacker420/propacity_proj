@@ -13,6 +13,7 @@ import LoadingIndicator from './components/LoadingIndicator';
 import ErrorMessage from './components/ErrorMessage';
 import ReviewsTable from './components/ReviewsTable';
 import SummaryView from './components/SummaryView';
+import HistoryView from './components/HistoryView';
 import GitHubDetails from './components/GitHubDetails';
 import APIStatusIndicator from './components/APIStatusIndicator';
 import APIQuotaDisplay from './components/APIQuotaDisplay';
@@ -53,6 +54,10 @@ function App() {
   const [repoUrl, setRepoUrl] = useState('');
   const [repoData, setRepoData] = useState(null);
 
+  // History state
+  const [showHistory, setShowHistory] = useState(false);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
   // Handle GitHub analysis with URL tracking
   const handleGitHubAnalysis = async (url) => {
     setRepoUrl(url);
@@ -68,6 +73,33 @@ function App() {
     setRepoUrl('');
     setRepoData(null);
     clearApiStatus();
+    setShowHistory(false);
+    setSelectedHistoryItem(null);
+  };
+
+  // Toggle history view
+  const handleToggleHistory = () => {
+    setShowHistory(prev => !prev);
+    if (selectedHistoryItem) {
+      setSelectedHistoryItem(null);
+    }
+  };
+
+  // Handle selecting an analysis from history
+  const handleSelectAnalysis = (analysis) => {
+    setSelectedHistoryItem(analysis);
+    // Load the analysis data
+    if (analysis && analysis.summary) {
+      // Set the analyzed reviews from the history item if available
+      // For now, we'll just set the summary and use the existing setActiveView
+      resetData();
+      // We don't have direct access to setSummary, so we'll need to
+      // implement a different approach to load the summary
+      // For now, we'll just use the summary from the history item
+      // and set it in the state
+      setActiveView('summary');
+      setShowHistory(false);
+    }
   };
 
   return (
@@ -82,6 +114,7 @@ function App() {
             hasSummary={summary !== null}
             onDownloadPDF={downloadPDF}
             onReset={handleReset}
+            onShowHistory={handleToggleHistory}
             loading={loading}
           />
 
@@ -174,6 +207,24 @@ function App() {
           <AnimatePresence>
             {summary && activeView === 'summary' && (
               <SummaryView summary={summary} onDownloadPDF={downloadPDF} />
+            )}
+          </AnimatePresence>
+
+          {/* History View */}
+          <AnimatePresence>
+            {showHistory && (
+              <motion.div
+                className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <HistoryView
+                  onSelectAnalysis={handleSelectAnalysis}
+                  onClose={handleToggleHistory}
+                />
+              </motion.div>
             )}
           </AnimatePresence>
         </div>

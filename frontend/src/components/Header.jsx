@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { DocumentTextIcon, ChartPieIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, ChartPieIcon, ArrowLeftIcon, ClockIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from './ConfirmationDialog';
 
 /**
@@ -13,6 +13,7 @@ const Header = ({
   hasSummary,
   onDownloadPDF,
   onReset,
+  onShowHistory,
   loading
 }) => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -38,6 +39,19 @@ const Header = ({
           </motion.button>
         )}
         <h1 className="text-3xl font-bold text-gray-900">Product Review Analyzer</h1>
+
+        {/* History Button */}
+        <motion.button
+          className="ml-4 p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+          onClick={onShowHistory}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          title="View Analysis History"
+        >
+          <ClockIcon className="w-5 h-5 text-gray-700" />
+        </motion.button>
       </div>
 
       {hasData && (

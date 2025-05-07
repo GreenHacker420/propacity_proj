@@ -247,6 +247,39 @@ const api = {
     const params = sourceType ? { source_type: sourceType } : {};
     const response = await axios.get('/api/weekly/priorities', { params });
     return response.data;
+  },
+
+  // Get analysis history
+  getAnalysisHistory: async () => {
+    try {
+      const response = await axios.get('/api/history');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching analysis history:', error);
+      return [];
+    }
+  },
+
+  // Get specific analysis by ID
+  getAnalysisById: async (analysisId) => {
+    try {
+      const response = await axios.get(`/api/history/${analysisId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching analysis with ID ${analysisId}:`, error);
+      return null;
+    }
+  },
+
+  // Delete analysis by ID
+  deleteAnalysis: async (analysisId) => {
+    try {
+      await axios.delete(`/api/history/${analysisId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting analysis with ID ${analysisId}:`, error);
+      throw error;
+    }
   }
 };
 
