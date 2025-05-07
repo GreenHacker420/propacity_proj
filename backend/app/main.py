@@ -18,6 +18,7 @@ from app.api.timing_routes import router as timing_router
 from app.api.history_routes import router as history_router
 from app.api.sentiment_routes import router as sentiment_router
 from app.api.weekly_routes import router as weekly_router
+from app.api.websocket_routes import router as websocket_router
 from app.utils.exceptions import ReviewSystemException
 from app.auth.mongo_auth import get_current_active_user
 from app.mongodb import init_mongodb
@@ -173,6 +174,10 @@ if AUTH_AVAILABLE:
     app.include_router(auth_router, prefix="/api")
 else:
     logger.warning("Authentication routes are not available")
+
+# Include WebSocket routes
+logger.info("Including WebSocket routes")
+app.include_router(websocket_router)
 
 # Health check endpoint removed for production
 

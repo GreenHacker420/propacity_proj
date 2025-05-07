@@ -344,8 +344,35 @@ class TextAnalyzer:
                 start_time = time.time()
                 logger.info(f"Using Gemini API for batch sentiment analysis of {len(texts)} texts")
 
-                # Get sentiment from Gemini in batch
-                gemini_results = self.gemini_service.analyze_reviews(texts)
+                # Create a callback function to log batch progress and update WebSocket
+                def batch_progress_callback(current_batch, total_batches, batch_time, items_processed, avg_speed, estimated_time_remaining):
+                    # Log progress
+                    logger.info(f"Batch progress: {current_batch}/{total_batches} " +
+                               f"({items_processed}/{len(texts)} items, " +
+                               f"{avg_speed:.2f} items/sec, " +
+                               f"~{estimated_time_remaining:.1f}s remaining)")
+
+                    # Get user ID from metadata if available
+                    user_id = None
+                    if metadata_list and len(metadata_list) > 0 and metadata_list[0]:
+                        user_id = metadata_list[0].get("user_id")
+
+                    # If we have a user ID, send WebSocket update
+                    if user_id:
+                        from ..api.websocket_routes import batch_progress_callback as ws_callback
+                        ws_callback(
+                            user_id=user_id,
+                            current_batch=current_batch,
+                            total_batches=total_batches,
+                            batch_time=batch_time,
+                            items_processed=items_processed,
+                            total_items=len(texts),
+                            avg_speed=avg_speed,
+                            estimated_time_remaining=estimated_time_remaining
+                        )
+
+                # Get sentiment from Gemini in batch with progress reporting
+                gemini_results = self.gemini_service.analyze_reviews(texts, callback=batch_progress_callback)
 
                 processing_time = time.time() - start_time
                 logger.info(f"Gemini batch sentiment analysis completed in {processing_time:.2f} seconds")

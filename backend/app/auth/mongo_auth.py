@@ -100,6 +100,49 @@ async def get_current_active_user(current_user = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
+async def get_current_user_optional(token: str = Depends(oauth2_scheme)):
+    """Get current user from token, but don't raise an exception if token is invalid."""
+    try:
+        return await get_current_user(token)
+    except HTTPException:
+        return None
+
+async def get_current_user_ws(websocket):
+    """Get current user from WebSocket connection."""
+    try:
+        # Get token from query parameters
+        token = websocket.query_params.get("token")
+        if not token:
+            # Try getting token from headers
+            auth_header = websocket.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+            else:
+                raise HTTPException(status_code=401, detail="Missing authentication token")
+
+        # Decode token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        user_id: str = payload.get("id")
+
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        # Get user from database
+        user = get_user(username=username)
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        # Check if user is active
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=400, detail="Inactive user")
+
+        return user
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication error: {str(e)}")
+
 def create_user(username: str, email: str, password: str, is_admin: bool = False):
     """Create a new user in MongoDB."""
     users_collection = get_collection("users")

@@ -15,7 +15,7 @@ from ..services.scraper import Scraper
 from ..services.visualization import Visualizer
 from ..mongodb import get_collection
 from ..models.db_models import Review as DBReview, Keyword, ReviewModel
-from ..auth.mongo_auth import get_current_active_user
+from ..auth.mongo_auth import get_current_active_user, get_current_user_optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,13 +27,15 @@ scraper = Scraper()
 visualizer = Visualizer()
 
 @router.post("/upload", response_model=List[ReviewResponse])
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(file: UploadFile = File(...), current_user: Optional[dict] = Depends(get_current_active_user)):
     """
     Upload and process a CSV file containing reviews.
 
     This endpoint accepts CSV files with various formats and automatically maps columns.
     At minimum, the CSV must contain text content for reviews.
     """
+    # Get user ID for WebSocket updates
+    user_id = str(current_user["_id"]) if current_user else None
     logger.info(f"Received file upload: {file.filename}")
 
     if not file.filename.lower().endswith('.csv'):
@@ -485,6 +487,11 @@ async def upload_csv(file: UploadFile = File(...)):
         texts = [review.text for review in reviews]
         metadata_list = [review.metadata for review in reviews]
 
+        # Add user_id to metadata for WebSocket updates
+        if user_id:
+            for metadata in metadata_list:
+                metadata['user_id'] = user_id
+
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} reviews from CSV in batch")
         start_time = time.time()
@@ -513,11 +520,13 @@ async def scrape_data(
     source: str = Query(..., description="Data source (twitter, playstore)"),
     query: Optional[str] = Query(None, description="Search query or app URL"),
     limit: int = Query(50, ge=1, le=5000, description="Maximum number of reviews to fetch"),
-    current_user: Optional[dict] = None  # Make authentication optional
+    current_user: Optional[dict] = Depends(get_current_active_user)
 ):
     """
     Scrape and analyze data from online sources
     """
+    # Get user ID for WebSocket updates
+    user_id = str(current_user["_id"]) if current_user else None
     try:
         if source == 'playstore':
             if not query:
@@ -538,12 +547,20 @@ async def scrape_data(
         # Extract texts for batch processing
         texts = [review['text'] for review in reviews]
 
+        # Create metadata list with user_id for WebSocket updates
+        metadata_list = []
+        for _ in range(len(texts)):
+            metadata = {'source': source}
+            if user_id:
+                metadata['user_id'] = user_id
+            metadata_list.append(metadata)
+
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} scraped reviews in batch")
         start_time = time.time()
 
-        # Process all texts in batch
-        analyses = analyzer.analyze_texts_batch(texts)
+        # Process all texts in batch with metadata
+        analyses = analyzer.analyze_texts_batch(texts, metadata_list)
 
         processing_time = time.time() - start_time
         logger.info(f"Batch analysis of scraped reviews completed in {processing_time:.2f} seconds")
@@ -579,11 +596,19 @@ async def scrape_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/analyze", response_model=List[ReviewResponse])
-async def analyze_reviews(reviews: List[ReviewCreate]):
+async def analyze_reviews(reviews: List[ReviewCreate], current_user: Optional[dict] = Depends(get_current_user_optional)):
     try:
+        # Get user ID for WebSocket updates
+        user_id = str(current_user["_id"]) if current_user else None
+
         # Extract texts and metadata for batch processing
         texts = [review.text for review in reviews]
         metadata_list = [review.metadata for review in reviews if hasattr(review, 'metadata')]
+
+        # Add user_id to metadata for WebSocket updates
+        if user_id:
+            for metadata in metadata_list:
+                metadata['user_id'] = user_id
 
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} reviews in batch")
