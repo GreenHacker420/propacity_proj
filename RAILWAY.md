@@ -8,7 +8,9 @@ This guide provides instructions for deploying the Product Pulse application to 
 2. A MongoDB Atlas account with a database set up
 3. (Optional) A Google Gemini API key for advanced analysis features
 
-## Python Version
+## Runtime Requirements
+
+### Python Version
 
 This application is configured to use Python 3.11, which provides the best compatibility with all the required packages. The following files specify the Python version:
 
@@ -16,6 +18,14 @@ This application is configured to use Python 3.11, which provides the best compa
 - `.python-version`: Specifies Python 3.11.7
 - `backend/requirements.txt`: Includes a Python 3.11 requirement
 - `railway.json`: Configures Nixpacks to use Python 3.11
+
+### Node.js Version
+
+The frontend requires Node.js 18 or later. The following files specify the Node.js version:
+
+- `.nvmrc`: Specifies Node.js 18
+- `package.json`: Specifies Node.js >=18.0.0 in the engines field
+- `railway.json`: Configures Nixpacks to use Node.js 18
 
 ## Environment Variables
 
@@ -28,6 +38,19 @@ The following environment variables need to be set in your Railway project:
 - `JWT_ALGORITHM`: HS256
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: 30
 - `GOOGLE_API_KEY`: (Optional) Your Google Gemini API key
+
+## Configuration Files
+
+The following configuration files are used for Railway deployment:
+
+- `railway.json`: Main configuration file for Railway
+- `nixpacks.toml`: Configuration for the Nixpacks build system
+- `Procfile`: Defines the command to run the application
+- `runtime.txt`: Specifies the Python version
+- `.nvmrc`: Specifies the Node.js version
+- `.python-version`: Specifies the Python version
+- `package.json`: Defines Node.js dependencies and scripts
+- `.npmrc`: Configures npm behavior
 
 ## Deployment Steps
 
@@ -49,10 +72,12 @@ The following environment variables need to be set in your Railway project:
 
 4. **Deploy the application**
 
-   - Railway will automatically deploy your application based on the `railway.json` configuration
+   - Railway will automatically deploy your application based on the configuration files
    - The deployment process will:
+     - Install Python 3.11 and Node.js 18
      - Install backend dependencies
      - Download NLTK resources
+     - Install frontend dependencies
      - Build the frontend
      - Start the FastAPI server
 
