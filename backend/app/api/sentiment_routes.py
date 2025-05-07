@@ -50,14 +50,28 @@ async def analyze_sentiment(request: SentimentRequest):
 @router.post("/batch", response_model=BatchSentimentResponse)
 async def analyze_batch_sentiment(request: BatchSentimentRequest):
     """
-    Analyze sentiment of multiple texts
+    Analyze sentiment of multiple texts using batch processing
     """
     try:
-        results = []
-        for text in request.texts:
-            result = advanced_sentiment_analyzer.analyze_sentiment(text)
-            results.append(result)
-        
+        # Check if batch processing is available
+        if hasattr(advanced_sentiment_analyzer, 'analyze_sentiment_batch'):
+            logger.info(f"Using batch processing for {len(request.texts)} texts")
+            import time
+            start_time = time.time()
+
+            # Use batch processing
+            results = advanced_sentiment_analyzer.analyze_sentiment_batch(request.texts)
+
+            processing_time = time.time() - start_time
+            logger.info(f"Batch sentiment analysis completed in {processing_time:.2f} seconds")
+        else:
+            # Fall back to individual processing
+            logger.info(f"Batch processing not available, processing {len(request.texts)} texts individually")
+            results = []
+            for text in request.texts:
+                result = advanced_sentiment_analyzer.analyze_sentiment(text)
+                results.append(result)
+
         return BatchSentimentResponse(results=results)
     except Exception as e:
         logger.error(f"Error analyzing batch sentiment: {str(e)}")

@@ -15,6 +15,7 @@ from app.api.routes import router as api_router
 from app.api.timing_routes import router as timing_router
 from app.api.history_routes import router as history_router
 from app.api.sentiment_routes import router as sentiment_router
+from app.api.weekly_routes import router as weekly_router
 from app.utils.exceptions import ReviewSystemException
 
 # Try to import Gemini routes
@@ -123,6 +124,10 @@ app.include_router(history_router, prefix="/api")
 # Include sentiment routes
 logger.info("Including advanced sentiment analysis routes")
 app.include_router(sentiment_router, prefix="/api")
+
+# Include weekly routes
+logger.info("Including weekly routes")
+app.include_router(weekly_router, prefix="/api")
 
 # Include advanced routes if available
 if ADVANCED_ROUTES_AVAILABLE:

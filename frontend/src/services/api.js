@@ -59,6 +59,23 @@ const api = {
   getApiStatus: () => {
     return { ...apiStatus };
   },
+
+  // Get Gemini service status
+  getGeminiStatus: async () => {
+    try {
+      const response = await axios.get('/api/gemini/status');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching Gemini status:', error);
+      return {
+        available: false,
+        model: 'unknown',
+        rate_limited: false,
+        circuit_open: false,
+        using_local_processing: true
+      };
+    }
+  },
   // Upload and analyze a CSV file
   uploadFile: async (file) => {
     const formData = new FormData();

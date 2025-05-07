@@ -37,7 +37,7 @@ class ScrapeRequest(BaseModel):
     source: str = Field(..., description="Source to scrape (twitter, playstore)")
     query: Optional[str] = Field(None, description="Search query for Twitter")
     app_id: Optional[str] = Field(None, description="App ID for Play Store")
-    limit: int = Field(50, description="Maximum number of results to return")
+    limit: int = Field(50, ge=1, le=5000, description="Maximum number of results to return")
 
 class AnalysisResults(BaseModel):
     sentiment_scores: List[float]

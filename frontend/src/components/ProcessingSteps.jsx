@@ -1,14 +1,42 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
 import { ClockIcon } from '@heroicons/react/24/outline';
 import LoadingIndicator from './LoadingIndicator';
 import APIStatusIndicator from './APIStatusIndicator';
 import APIQuotaDisplay from './APIQuotaDisplay';
+import GeminiStatusIndicator from './GeminiStatusIndicator';
+import api from '../services/api';
 
 const ProcessingSteps = ({ steps, currentStep, apiStatus, onClearApiStatus }) => {
+  const [geminiStatus, setGeminiStatus] = useState(null);
+
+  // Fetch Gemini status when component mounts
+  useEffect(() => {
+    const fetchGeminiStatus = async () => {
+      try {
+        const status = await api.getGeminiStatus();
+        setGeminiStatus(status);
+      } catch (error) {
+        console.error('Error fetching Gemini status:', error);
+      }
+    };
+
+    fetchGeminiStatus();
+
+    // Refresh status every 10 seconds
+    const interval = setInterval(fetchGeminiStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="w-full max-w-md mx-auto">
+      {/* Show Gemini status indicator if circuit breaker is open or rate limited */}
+      {geminiStatus && (geminiStatus.circuit_open || geminiStatus.rate_limited) && (
+        <GeminiStatusIndicator className="mb-4" />
+      )}
+
+      {/* Show API status indicator for other errors */}
       {apiStatus && apiStatus.error && (
         apiStatus.error.includes('quota') ? (
           <APIQuotaDisplay apiStatus={apiStatus} className="mb-4" />

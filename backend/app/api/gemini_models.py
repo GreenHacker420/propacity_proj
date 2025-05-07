@@ -37,3 +37,13 @@ class GeminiInsightResponse(BaseModel):
     feature_requests: List[str] = Field(..., description="Feature requests mentioned in reviews")
     positive_aspects: List[str] = Field(..., description="Positive aspects mentioned in reviews")
     processing_time: Optional[float] = Field(None, description="Processing time in seconds")
+
+class GeminiStatusResponse(BaseModel):
+    """Response model for Gemini service status."""
+    available: bool = Field(..., description="Whether the Gemini API is available")
+    model: str = Field(..., description="The Gemini model being used")
+    rate_limited: bool = Field(..., description="Whether the service is currently rate limited")
+    circuit_open: bool = Field(..., description="Whether the circuit breaker is open")
+    using_local_processing: bool = Field(..., description="Whether local processing is being used")
+    rate_limit_reset_in: Optional[int] = Field(None, description="Seconds until rate limit resets")
+    circuit_reset_in: Optional[int] = Field(None, description="Seconds until circuit breaker resets")

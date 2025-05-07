@@ -13,36 +13,36 @@ function classNames(...classes) {
 /**
  * Component for data input tabs (Upload CSV, Scrape Data, GitHub Repo)
  */
-const DataInputTabs = ({ 
-  onFileUpload, 
-  onScrape, 
-  onGitHubAnalysis, 
-  loading, 
-  uploadProgress 
+const DataInputTabs = ({
+  onFileUpload,
+  onScrape,
+  onGitHubAnalysis,
+  loading,
+  uploadProgress
 }) => {
   // Tab state
   const [selectedTab, setSelectedTab] = useState(0);
-  
+
   // File upload state
   const [file, setFile] = useState(null);
-  
+
   // Scraping state
   const [scrapeSource, setScrapeSource] = useState('playstore');
   const [scrapeQuery, setScrapeQuery] = useState('');
   const [scrapeLimit, setScrapeLimit] = useState(50);
-  
+
   // Handle file selection
   const handleFileSelected = (selectedFile) => {
     setFile(selectedFile);
   };
-  
+
   // Handle file upload
   const handleFileUpload = () => {
     if (file) {
       onFileUpload(file);
     }
   };
-  
+
   // Handle scrape
   const handleScrape = () => {
     if (scrapeQuery) {
@@ -62,7 +62,7 @@ const DataInputTabs = ({
       alert('Please enter a search query or app URL');
     }
   };
-  
+
   return (
     <Tab.Group selectedIndex={selectedTab} onChange={setSelectedTab}>
       <Tab.List className="flex space-x-1 rounded-xl bg-primary-900/20 p-1">
@@ -171,7 +171,7 @@ const DataInputTabs = ({
                   type="text"
                   value={scrapeQuery}
                   onChange={(e) => setScrapeQuery(e.target.value)}
-                  placeholder={scrapeSource === 'playstore' 
+                  placeholder={scrapeSource === 'playstore'
                     ? "https://play.google.com/store/apps/details?id=com.example.app"
                     : "Enter search query"}
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
@@ -193,7 +193,7 @@ const DataInputTabs = ({
                   value={scrapeLimit}
                   onChange={(e) => setScrapeLimit(parseInt(e.target.value))}
                   min="1"
-                  max="100"
+                  max="5000"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
               </div>

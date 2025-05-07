@@ -271,6 +271,67 @@ class TextAnalyzer:
 
         return sentiment_score, sentiment_label
 
+    def analyze_texts_batch(self, texts: List[str]) -> List[Dict]:
+        """
+        Analyze multiple texts in batch for more efficient processing.
+
+        Args:
+            texts: List of texts to analyze
+
+        Returns:
+            List of analysis results
+        """
+        results = []
+
+        # Try Gemini API batch processing first if available
+        if self.gemini_service and self.gemini_service.available and self.use_gemini and texts:
+            try:
+                start_time = time.time()
+                logger.info(f"Using Gemini API for batch sentiment analysis of {len(texts)} texts")
+
+                # Get sentiment from Gemini in batch
+                gemini_results = self.gemini_service.analyze_reviews(texts)
+
+                processing_time = time.time() - start_time
+                logger.info(f"Gemini batch sentiment analysis completed in {processing_time:.2f} seconds")
+
+                # Process each result
+                for i, (text, gemini_result) in enumerate(zip(texts, gemini_results)):
+                    # Clean the text
+                    cleaned_text = self.clean_text(text)
+
+                    # Extract sentiment data
+                    sentiment_score = gemini_result.get("score", 0.5)
+                    sentiment_label = gemini_result.get("label", "NEUTRAL")
+
+                    # Extract keywords (still done individually)
+                    keywords = self.extract_keywords(cleaned_text)
+
+                    # Classify feedback (still done individually)
+                    category = self.classify_feedback(cleaned_text)
+
+                    # Add to results
+                    results.append({
+                        "sentiment_score": float(sentiment_score),
+                        "sentiment_label": sentiment_label,
+                        "category": category,
+                        "keywords": keywords
+                    })
+
+                return results
+
+            except Exception as e:
+                logger.error(f"Error in Gemini batch sentiment analysis: {str(e)}")
+                logger.warning("Falling back to individual analysis")
+                # Fall back to individual analysis
+
+        # Process each text individually
+        for text in texts:
+            result = self.analyze_text(text)
+            results.append(result)
+
+        return results
+
     def generate_summary(self, reviews: List[Any]) -> Dict:
         """
         Generate a summary of the analyzed reviews.
@@ -301,11 +362,20 @@ class TextAnalyzer:
                     logger.warning("No valid review texts found for Gemini insights extraction")
                     return self._traditional_summary(reviews)
 
-                # Get insights from Gemini
+                # Log the number of reviews being processed
+                logger.info(f"Processing {len(review_texts)} reviews for insights extraction")
+
+                # Get insights from Gemini (now with batching and rate limit handling)
                 gemini_insights = self.gemini_service.extract_insights(review_texts)
 
                 processing_time = time.time() - start_time
                 logger.info(f"Gemini insights extraction completed in {processing_time:.2f} seconds")
+
+                # Log the structure of the insights
+                logger.info(f"Gemini insights keys: {list(gemini_insights.keys())}")
+                logger.info(f"Pain points: {len(gemini_insights.get('pain_points', []))}, " +
+                           f"Feature requests: {len(gemini_insights.get('feature_requests', []))}, " +
+                           f"Positive aspects: {len(gemini_insights.get('positive_aspects', []))}")
 
                 # Process the insights
                 pain_points = []
@@ -314,38 +384,96 @@ class TextAnalyzer:
                 priorities = []
 
                 # Add pain points
-                for i, point in enumerate(gemini_insights.get("pain_points", [])):
+                pain_points_list = gemini_insights.get("pain_points", [])
+                if not pain_points_list:
+                    # Add a default pain point if none were found
+                    pain_points_list = ["No specific pain points identified in the reviews"]
+
+                for i, point in enumerate(pain_points_list):
+                    # Skip empty strings
+                    if not point or not isinstance(point, str):
+                        continue
+
                     pain_points.append({
                         "text": point,
                         "sentiment_score": 0.2,  # Low score for pain points
                         "keywords": []
                     })
-                    if i == 0:
+                    if i == 0 and "no specific" not in point.lower():
                         priorities.append(f"Address critical issue: {point[:100]}...")
 
                 # Add feature requests
-                for i, request in enumerate(gemini_insights.get("feature_requests", [])):
+                feature_requests_list = gemini_insights.get("feature_requests", [])
+                if not feature_requests_list:
+                    # Add a default feature request if none were found
+                    feature_requests_list = ["No specific feature requests identified in the reviews"]
+
+                for i, request in enumerate(feature_requests_list):
+                    # Skip empty strings
+                    if not request or not isinstance(request, str):
+                        continue
+
                     feature_requests.append({
                         "text": request,
                         "sentiment_score": 0.7,  # Higher score for feature requests
                         "keywords": []
                     })
-                    if i == 0:
+                    if i == 0 and "no specific" not in request.lower():
                         priorities.append(f"Implement requested feature: {request[:100]}...")
 
                 # Add positive aspects
-                for i, positive in enumerate(gemini_insights.get("positive_aspects", [])):
+                positive_aspects_list = gemini_insights.get("positive_aspects", [])
+                if not positive_aspects_list:
+                    # Add a default positive aspect if none were found
+                    positive_aspects_list = ["No specific positive aspects identified in the reviews"]
+
+                for i, positive in enumerate(positive_aspects_list):
+                    # Skip empty strings
+                    if not positive or not isinstance(positive, str):
+                        continue
+
                     positive_feedback.append({
                         "text": positive,
                         "sentiment_score": 0.9,  # High score for positive feedback
                         "keywords": []
                     })
-                    if i == 0:
+                    if i == 0 and "no specific" not in positive.lower():
                         priorities.append(f"Maintain strengths: {positive[:100]}...")
 
                 # If no priorities were added, add a general one from the summary
                 if not priorities and "summary" in gemini_insights:
                     priorities.append(f"General recommendation: {gemini_insights['summary'][:100]}...")
+
+                # Ensure we have at least one item in each category
+                if not pain_points:
+                    pain_points = [{
+                        "text": "No specific pain points identified in the reviews",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+
+                if not feature_requests:
+                    feature_requests = [{
+                        "text": "No specific feature requests identified in the reviews",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+
+                if not positive_feedback:
+                    positive_feedback = [{
+                        "text": "No specific positive feedback identified in the reviews",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+
+                if not priorities:
+                    priorities = ["No specific priorities identified based on the reviews"]
+
+                # Log the final counts
+                logger.info(f"Final summary counts - Pain points: {len(pain_points)}, " +
+                           f"Feature requests: {len(feature_requests)}, " +
+                           f"Positive feedback: {len(positive_feedback)}, " +
+                           f"Priorities: {len(priorities)}")
 
                 return {
                     "pain_points": pain_points[:3],
@@ -359,7 +487,11 @@ class TextAnalyzer:
             except Exception as e:
                 logger.error(f"Error in Gemini insights extraction: {str(e)}")
                 logger.warning("Falling back to traditional summary generation")
-                return self._traditional_summary(reviews)
+                # Add error information to the summary
+                traditional_summary = self._traditional_summary(reviews)
+                traditional_summary["error"] = str(e)
+                traditional_summary["error_source"] = "gemini_api"
+                return traditional_summary
 
         # Fall back to traditional summary generation
         return self._traditional_summary(reviews)

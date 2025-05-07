@@ -7,13 +7,42 @@ import WeeklySummaryView from './WeeklySummaryView';
 /**
  * Component for displaying the summary of analyzed reviews
  */
-const SummaryView = ({ data, onDownloadPDF }) => {
+const SummaryView = ({ summary, onDownloadPDF }) => {
   const [activeView, setActiveView] = useState('analysis');
 
-  if (!data) return null;
+  // For backward compatibility, use summary prop but fallback to data if needed
+  const data = summary || null;
+
+  if (!data) {
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4 mt-4">
+        <p className="font-medium">No summary data available. There might have been an error generating the summary.</p>
+      </div>
+    );
+  }
+
+  // Check for API errors in the summary data
+  const hasApiError = data.error && data.error_source === "gemini_api";
+  const isQuotaError = hasApiError && data.error.includes("quota");
 
   return (
     <div className="space-y-8">
+      {/* API Error Message */}
+      {hasApiError && (
+        <div className={`p-4 rounded-lg mb-4 ${isQuotaError ? 'bg-blue-50 border border-blue-200 text-blue-800' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+          <p className="font-medium">
+            {isQuotaError
+              ? 'AI quota exceeded. The summary was generated using basic analysis instead of advanced AI.'
+              : 'There was an issue with the AI service. The summary was generated using basic analysis.'}
+          </p>
+          <p className="text-sm mt-2">
+            {isQuotaError
+              ? 'This happens when the daily limit for AI requests is reached. The system automatically switched to a simpler analysis method.'
+              : 'The system automatically switched to a simpler analysis method.'}
+          </p>
+        </div>
+      )}
+
       {/* View Selector Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
         <button
@@ -54,13 +83,19 @@ const SummaryView = ({ data, onDownloadPDF }) => {
                 Download PDF Report
               </button>
             </div>
-            <ReviewsTable reviews={data.reviews} />
+            {data.reviews && data.reviews.length > 0 ? (
+              <ReviewsTable reviews={data.reviews} />
+            ) : (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-4">
+                <p className="font-medium">No review data available. There might have been an error processing the reviews.</p>
+              </div>
+            )}
           </div>
         </>
       )}
 
       {activeView === 'weekly' && (
-        <WeeklySummaryView sourceType={data.source_type} />
+        <WeeklySummaryView sourceType={data.source_type || 'unknown'} />
       )}
     </div>
   );

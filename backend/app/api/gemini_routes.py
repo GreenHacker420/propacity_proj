@@ -14,7 +14,8 @@ from .gemini_models import (
     GeminiBatchRequest,
     GeminiBatchResponse,
     GeminiInsightRequest,
-    GeminiInsightResponse
+    GeminiInsightResponse,
+    GeminiStatusResponse
 )
 from ..services.gemini_service import GeminiService
 from ..services.mongo_service import MongoService
@@ -167,4 +168,19 @@ async def extract_insights(
         return result
     except Exception as e:
         logger.error(f"Error in Gemini insight extraction: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/status", response_model=GeminiStatusResponse)
+async def get_gemini_status():
+    """
+    Get the current status of the Gemini API service.
+
+    This endpoint provides information about the Gemini API service status,
+    including whether it's available, rate limited, or if the circuit breaker is open.
+    """
+    try:
+        status = gemini_service.get_service_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error getting Gemini service status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 import tempfile
 import os
 import logging
+import time
 from datetime import datetime
 import io
 from .models import ReviewCreate, ReviewResponse, SummaryResponse, VisualizationResponse
@@ -129,20 +130,34 @@ async def upload_csv(file: UploadFile = File(...)):
 
             try:
                 review = ReviewCreate(**review_data)
-
-                # Analyze the review
-                analysis = analyzer.analyze_text(review.text)
-
-                # Combine review data with analysis
-                review_dict = review.model_dump()
-                review_dict.update(analysis)
-                reviews.append(review_dict)
+                # Store the review for batch processing
+                reviews.append(review)
             except Exception as e:
                 logger.error(f"Error processing row: {str(e)}")
                 continue
 
-        logger.info(f"Processed {len(reviews)} reviews from CSV")
-        return reviews
+        # Extract texts for batch processing
+        texts = [review.text for review in reviews]
+
+        # Use batch processing for better performance
+        logger.info(f"Analyzing {len(texts)} reviews from CSV in batch")
+        start_time = time.time()
+
+        # Process all texts in batch
+        analyses = analyzer.analyze_texts_batch(texts)
+
+        processing_time = time.time() - start_time
+        logger.info(f"Batch analysis of CSV reviews completed in {processing_time:.2f} seconds")
+
+        # Combine review data with analyses
+        analyzed_reviews = []
+        for i, review in enumerate(reviews):
+            review_dict = review.model_dump()
+            review_dict.update(analyses[i])
+            analyzed_reviews.append(review_dict)
+
+        logger.info(f"Processed {len(analyzed_reviews)} reviews from CSV")
+        return analyzed_reviews
     except Exception as e:
         logger.error(f"Error processing CSV: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -151,7 +166,7 @@ async def upload_csv(file: UploadFile = File(...)):
 async def scrape_data(
     source: str = Query(..., description="Data source (twitter, playstore)"),
     query: Optional[str] = Query(None, description="Search query or app URL"),
-    limit: int = Query(50, ge=1, le=100, description="Maximum number of reviews to fetch"),
+    limit: int = Query(50, ge=1, le=5000, description="Maximum number of reviews to fetch"),
     current_user: Optional[dict] = None  # Make authentication optional
 ):
     """
@@ -174,10 +189,23 @@ async def scrape_data(
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
 
-        # Analyze the scraped reviews
+        # Extract texts for batch processing
+        texts = [review['text'] for review in reviews]
+
+        # Use batch processing for better performance
+        logger.info(f"Analyzing {len(texts)} scraped reviews in batch")
+        start_time = time.time()
+
+        # Process all texts in batch
+        analyses = analyzer.analyze_texts_batch(texts)
+
+        processing_time = time.time() - start_time
+        logger.info(f"Batch analysis of scraped reviews completed in {processing_time:.2f} seconds")
+
+        # Combine review data with analyses
         analyzed_reviews = []
-        for review in reviews:
-            analysis = analyzer.analyze_text(review['text'])
+        for i, review in enumerate(reviews):
+            analysis = analyses[i]
             analyzed_reviews.append({
                 "text": review['text'],
                 "sentiment_score": analysis['sentiment_score'],
@@ -207,19 +235,30 @@ async def scrape_data(
 @router.post("/analyze", response_model=List[ReviewResponse])
 async def analyze_reviews(reviews: List[ReviewCreate]):
     try:
-        analyzed_reviews = []
-        for review in reviews:
-            # Clean and analyze the text
-            analysis = analyzer.analyze_text(review.text)
+        # Extract texts for batch processing
+        texts = [review.text for review in reviews]
 
-            # Combine review data with analysis
+        # Use batch processing for better performance
+        logger.info(f"Analyzing {len(texts)} reviews in batch")
+        start_time = time.time()
+
+        # Process all texts in batch
+        analyses = analyzer.analyze_texts_batch(texts)
+
+        processing_time = time.time() - start_time
+        logger.info(f"Batch analysis completed in {processing_time:.2f} seconds")
+
+        # Combine review data with analyses
+        analyzed_reviews = []
+        for i, review in enumerate(reviews):
             review_dict = review.model_dump()
-            review_dict.update(analysis)
+            review_dict.update(analyses[i])
             analyzed_reviews.append(review_dict)
 
         return analyzed_reviews
 
     except Exception as e:
+        logger.error(f"Error analyzing reviews: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/summary", response_model=SummaryResponse)

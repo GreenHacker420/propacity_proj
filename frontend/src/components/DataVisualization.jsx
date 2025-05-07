@@ -58,44 +58,72 @@ const DataVisualization = ({ data }) => {
 
   useEffect(() => {
     if (data) {
-      const { summary } = data;
-      
-      // Prepare sentiment data for pie chart
-      const sentimentData = Object.entries(summary.sentiment_distribution).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value
-      }));
+      try {
+        const { summary } = data;
 
-      // Prepare classification data for bar chart
-      const classificationData = Object.entries(summary.classification_distribution).map(([name, value]) => ({
-        name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
-        value
-      }));
+        if (!summary) {
+          console.error('Summary data is missing');
+          return;
+        }
 
-      // Prepare game distribution data
-      const gameData = Object.entries(summary.game_distribution)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([name, value]) => ({
-          name,
+        // Safely access properties with fallbacks
+        const sentimentDistribution = summary.sentiment_distribution || {};
+        const classificationDistribution = summary.classification_distribution || {};
+        const gameDistribution = summary.game_distribution || {};
+        const topKeywords = summary.top_keywords || {};
+
+        // Prepare sentiment data for pie chart
+        const sentimentData = Object.entries(sentimentDistribution).map(([name, value]) => ({
+          name: name.charAt(0).toUpperCase() + name.slice(1),
           value
         }));
 
-      // Prepare keyword data
-      const keywordData = Object.entries(summary.top_keywords)
-        .slice(0, 10)
-        .map(([keyword, count]) => ({
-          name: keyword,
-          value: count
+        // Prepare classification data for bar chart
+        const classificationData = Object.entries(classificationDistribution).map(([name, value]) => ({
+          name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+          value
         }));
 
-      setChartData({
-        sentimentData,
-        classificationData,
-        gameData,
-        keywordData,
-        summary
-      });
+        // Prepare game distribution data
+        const gameData = Object.entries(gameDistribution)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([name, value]) => ({
+            name,
+            value
+          }));
+
+        // Prepare keyword data
+        const keywordData = Object.entries(topKeywords)
+          .slice(0, 10)
+          .map(([keyword, count]) => ({
+            name: keyword,
+            value: count
+          }));
+
+        setChartData({
+          sentimentData,
+          classificationData,
+          gameData,
+          keywordData,
+          summary
+        });
+      } catch (error) {
+        console.error('Error processing visualization data:', error);
+        // Set minimal chart data to prevent rendering errors
+        setChartData({
+          sentimentData: [],
+          classificationData: [],
+          gameData: [],
+          keywordData: [],
+          summary: {
+            total_reviews: 0,
+            average_sentiment: 0,
+            game_distribution: {},
+            top_keywords: {}
+          }
+        });
+      }
     }
   }, [data]);
 
@@ -334,4 +362,4 @@ const DataVisualization = ({ data }) => {
   );
 };
 
-export default DataVisualization; 
+export default DataVisualization;

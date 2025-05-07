@@ -16,6 +16,7 @@ import SummaryView from './components/SummaryView';
 import GitHubDetails from './components/GitHubDetails';
 import APIStatusIndicator from './components/APIStatusIndicator';
 import APIQuotaDisplay from './components/APIQuotaDisplay';
+import GeminiStatusIndicator from './components/GeminiStatusIndicator';
 
 /**
  * Main App component
@@ -130,16 +131,22 @@ function App() {
           <ErrorMessage error={error} />
 
           {/* API Status Indicator - Show when not in processing view but API has errors */}
-          {!loading && apiStatus && apiStatus.error && (
+          {!loading && (
             <div className="mt-4">
-              {apiStatus.error.includes('quota') ? (
-                <APIQuotaDisplay apiStatus={apiStatus} />
-              ) : (
-                <APIStatusIndicator
-                  apiStatus={apiStatus}
-                  onClose={clearApiStatus}
-                  showDetails={true}
-                />
+              {/* Show Gemini status indicator */}
+              <GeminiStatusIndicator className="mb-4" />
+
+              {/* Show API error indicators */}
+              {apiStatus && apiStatus.error && (
+                apiStatus.error.includes('quota') ? (
+                  <APIQuotaDisplay apiStatus={apiStatus} />
+                ) : (
+                  <APIStatusIndicator
+                    apiStatus={apiStatus}
+                    onClose={clearApiStatus}
+                    showDetails={true}
+                  />
+                )
               )}
             </div>
           )}
@@ -166,7 +173,7 @@ function App() {
           {/* Summary View */}
           <AnimatePresence>
             {summary && activeView === 'summary' && (
-              <SummaryView summary={summary} />
+              <SummaryView summary={summary} onDownloadPDF={downloadPDF} />
             )}
           </AnimatePresence>
         </div>
