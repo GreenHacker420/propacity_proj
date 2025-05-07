@@ -189,7 +189,16 @@ class WeeklySummaryService:
             summaries = await cursor.to_list(length=None)
 
             if not summaries:
-                raise ValueError("No summaries found for the specified criteria")
+                # If no summaries found, return empty insights
+                logger.warning(f"No summaries found for query: {query}")
+                return PriorityInsights(
+                    high_priority_items=[],
+                    trending_topics=[],
+                    sentiment_trends={},
+                    action_items=[],
+                    risk_areas=[],
+                    opportunity_areas=[]
+                )
 
             # Aggregate high priority items
             high_priority_items = []
@@ -312,7 +321,8 @@ class WeeklySummaryService:
                     reverse=True
                 )[:5]
 
-            return PriorityInsights(
+            # Create PriorityInsights object with the collected data
+            insights = PriorityInsights(
                 high_priority_items=sorted_high_priority,
                 trending_topics=sorted_trending,
                 sentiment_trends=sentiment_trends,
@@ -320,6 +330,8 @@ class WeeklySummaryService:
                 risk_areas=list(risk_areas),
                 opportunity_areas=list(opportunity_areas)
             )
+
+            return insights
         except Exception as e:
             logger.error(f"Error getting priority insights: {str(e)}")
             raise

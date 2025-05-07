@@ -18,6 +18,7 @@ class ReviewCreate(BaseModel):
     timestamp: Optional[datetime] = None
     rating: Optional[float] = None
     source: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class ReviewResponse(BaseModel):
     text: str
@@ -32,6 +33,7 @@ class ReviewResponse(BaseModel):
     detected_language: Optional[str] = None
     is_translated: Optional[bool] = None
     original_text: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class ScrapeRequest(BaseModel):
     source: str = Field(..., description="Source to scrape (twitter, playstore)")

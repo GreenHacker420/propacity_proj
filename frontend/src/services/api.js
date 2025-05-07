@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-// Configure axios base URL to match the backend server port
-axios.defaults.baseURL = 'http://localhost:8000';
+// Configure axios to use the proxy defined in vite.config.js
+// The proxy will forward requests to the backend
+axios.defaults.baseURL = ''; // Empty base URL to use the current origin
 axios.defaults.withCredentials = true;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 

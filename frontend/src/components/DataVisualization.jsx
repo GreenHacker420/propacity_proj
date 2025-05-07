@@ -63,6 +63,21 @@ const DataVisualization = ({ data }) => {
 
         if (!summary) {
           console.error('Summary data is missing');
+          // Instead of returning, set default empty data
+          setChartData({
+            sentimentData: [],
+            classificationData: [],
+            gameData: [],
+            keywordData: [],
+            summary: {
+              total_reviews: 0,
+              average_sentiment: 0,
+              sentiment_distribution: {},
+              classification_distribution: {},
+              game_distribution: {},
+              top_keywords: {}
+            }
+          });
           return;
         }
 

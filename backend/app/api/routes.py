@@ -6,6 +6,7 @@ import tempfile
 import os
 import logging
 import time
+import re
 from datetime import datetime
 import io
 from .models import ReviewCreate, ReviewResponse, SummaryResponse, VisualizationResponse
@@ -47,11 +48,60 @@ async def upload_csv(file: UploadFile = File(...)):
         encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
         df = None
 
+        # Check if this is a Twitter training data file based on filename
+        is_twitter_training = 'twitter_training' in file.filename.lower()
+        if is_twitter_training:
+            logger.info(f"Detected potential Twitter training data file: {file.filename}")
+
         for encoding in encodings:
             try:
-                df = pd.read_csv(io.StringIO(contents.decode(encoding)))
-                logger.info(f"Successfully read CSV with {encoding} encoding")
-                break
+                # Try to read with different delimiters
+                for delimiter in [',', ';', '\t']:
+                    try:
+                        # Special handling for Twitter training data
+                        if is_twitter_training:
+                            try:
+                                # First try reading with 4 columns and no header
+                                df = pd.read_csv(io.StringIO(contents.decode(encoding)),
+                                                delimiter=delimiter,
+                                                header=None,
+                                                names=['id', 'game', 'sentiment', 'text'])
+                                logger.info(f"Successfully read Twitter training data with {encoding} encoding and '{delimiter}' delimiter (no header)")
+
+                                # Log a sample of the data for debugging
+                                if not df.empty:
+                                    logger.info(f"Twitter training data sample (first 2 rows):\n{df.head(2)}")
+
+                                    # Check if the first row looks like a header
+                                    first_row = df.iloc[0]
+                                    if (isinstance(first_row['id'], str) and
+                                        first_row['id'].isdigit() == False and
+                                        'id' in first_row['id'].lower()):
+                                        logger.info("First row appears to be a header, re-reading with header")
+                                        # Re-read with header
+                                        df = pd.read_csv(io.StringIO(contents.decode(encoding)),
+                                                        delimiter=delimiter)
+                                        logger.info(f"Re-read Twitter training data with header: {df.columns.tolist()}")
+                                    break
+                            except Exception as e:
+                                logger.warning(f"Error reading as Twitter training data: {str(e)}")
+                                # Fall back to standard CSV reading
+
+                        # Standard CSV reading
+                        if df is None:
+                            df = pd.read_csv(io.StringIO(contents.decode(encoding)), delimiter=delimiter)
+                            logger.info(f"Successfully read CSV with {encoding} encoding and '{delimiter}' delimiter")
+
+                            # Log a sample of the data for debugging
+                            if not df.empty:
+                                logger.info(f"CSV sample (first 2 rows):\n{df.head(2)}")
+                                break
+                    except Exception as e:
+                        logger.warning(f"Error reading CSV with {encoding} encoding and '{delimiter}' delimiter: {str(e)}")
+                        continue
+
+                if df is not None:
+                    break
             except UnicodeDecodeError:
                 continue
             except Exception as e:
@@ -61,42 +111,262 @@ async def upload_csv(file: UploadFile = File(...)):
         if df is None:
             raise HTTPException(status_code=400, detail="Could not decode CSV file. Please ensure it's properly formatted.")
 
+        # Check if the CSV has headers
+        if df.columns.str.contains(r'^\d+$').all() or all(col.startswith('Unnamed: ') for col in df.columns):
+            logger.warning("CSV appears to have numeric or unnamed column names, which suggests no header row")
+            # Try reading again with no header
+            for encoding in encodings:
+                try:
+                    # Try different delimiters
+                    for delimiter in [',', ';', '\t']:
+                        try:
+                            df = pd.read_csv(io.StringIO(contents.decode(encoding)), header=None, delimiter=delimiter)
+                            logger.info(f"Re-read CSV with {encoding} encoding, '{delimiter}' delimiter, and no header")
+
+                            # Check if this looks like a valid data frame
+                            if not df.empty and len(df.columns) >= 3:
+                                # Assign default column names based on the expected format
+                                df.columns = ['id', 'category', 'text'] + [f'col_{i+4}' for i in range(len(df.columns)-3)]
+                                logger.info(f"Assigned default column names: {df.columns.tolist()}")
+
+                                # Log a sample of the data for debugging
+                                logger.info(f"CSV sample with default column names (first 2 rows):\n{df.head(2)}")
+                                break
+                        except Exception as e:
+                            logger.warning(f"Error reading CSV with no header, {encoding} encoding, and '{delimiter}' delimiter: {str(e)}")
+                            continue
+
+                    if df is not None and len(df.columns) >= 3:
+                        break
+                except Exception as e:
+                    logger.error(f"Error reading CSV with no header and {encoding} encoding: {str(e)}")
+                    continue
+
         logger.info(f"CSV columns: {df.columns.tolist()}")
+
+        # Clean up column names - remove extra spaces and convert to lowercase for easier matching
+        df.columns = [col.strip().lower() for col in df.columns]
+        logger.info(f"Cleaned CSV columns: {df.columns.tolist()}")
+
+        # Handle the case where column names might have spaces or special characters
+        # For example, "category feedback" might be read as "category_feedback" or "category.feedback"
+        column_name_mapping = {}
+        for col in df.columns:
+            clean_col = re.sub(r'[^a-z0-9]', '', col)
+            column_name_mapping[clean_col] = col
+
+        logger.info(f"Column name mapping: {column_name_mapping}")
 
         # Map columns to expected format
         column_mapping = {}
 
-        # Find text column - required
-        text_column_candidates = ['text', 'review', 'content', 'comment', 'feedback', 'description']
-        for candidate in text_column_candidates:
-            if candidate in df.columns:
-                column_mapping['text'] = candidate
-                break
+        # Special handling for Twitter training data
+        if is_twitter_training and len(df.columns) == 4:
+            logger.info("Using predefined column mapping for Twitter training data")
+            column_mapping['id'] = 'id'
+            column_mapping['category'] = 'sentiment'
+            column_mapping['text'] = 'text'
+            # Add game as metadata
+            logger.info(f"Twitter training data column mapping: {column_mapping}")
+            # Continue with the rest of the processing
 
+        # Check if this is the specific format with id, category feedback, text
+        if len(df.columns) >= 3:
+            # Log the actual column names for debugging
+            logger.info(f"Actual CSV column names: {df.columns.tolist()}")
+
+            # Check if column names match the expected pattern using both original and cleaned names
+            if (any('id' in col for col in df.columns) and
+                any('category' in col for col in df.columns) and
+                any('text' in col for col in df.columns)) or (
+                'id' in column_name_mapping and
+                ('category' in column_name_mapping or 'feedback' in column_name_mapping) and
+                'text' in column_name_mapping):
+
+                logger.info("Detected CSV format with ID, category, text structure by column names")
+
+                # Map columns by name
+                for col in df.columns:
+                    clean_col = re.sub(r'[^a-z0-9]', '', col)
+
+                    if 'id' in col or clean_col == 'id':
+                        column_mapping['id'] = col
+                    elif ('category' in col or 'feedback' in col or
+                          clean_col == 'category' or clean_col == 'feedback' or
+                          clean_col == 'categoryfeedback'):
+                        column_mapping['category'] = col
+                    elif 'text' in col or clean_col == 'text':
+                        column_mapping['text'] = col
+
+                logger.info(f"Mapped columns by name: {column_mapping}")
+
+            # If mapping by name didn't work, try by position and content
+            elif len(df.columns) >= 3:
+                logger.info("Trying to detect CSV format with ID, category feedback, text structure by position and content")
+
+                # Check each column for content characteristics
+                for i, col in enumerate(df.columns):
+                    # Sample the column content
+                    sample_content = df[col].astype(str).str.len().mean()
+                    logger.info(f"Column {i} ({col}) average content length: {sample_content}")
+
+                    # The column with the longest average content is likely the text
+                    if i == len(df.columns) - 1 and df[col].dtype == 'object':
+                        # Last column is often the text in many datasets
+                        column_mapping['text'] = col
+                        logger.info(f"Using last column '{col}' as text based on position")
+                    elif sample_content > 20 and df[col].dtype == 'object':
+                        # Column with long content is likely text
+                        column_mapping['text'] = col
+                        logger.info(f"Using column '{col}' as text based on content length")
+
+                # If we still don't have a text column, use the last column
+                if 'text' not in column_mapping and len(df.columns) >= 3:
+                    column_mapping['text'] = df.columns[-1]
+                    logger.info(f"Defaulting to last column '{df.columns[-1]}' as text")
+
+                # Look for category column - typically the second-to-last column or one with sentiment values
+                if len(df.columns) >= 3:
+                    potential_category_cols = []
+                    for i, col in enumerate(df.columns):
+                        if col != column_mapping.get('text'):
+                            # Check if column contains common sentiment/category values
+                            if df[col].dtype == 'object':
+                                values = df[col].astype(str).str.lower()
+                                has_sentiment = values.isin(['positive', 'negative', 'neutral']).any()
+                                if has_sentiment:
+                                    potential_category_cols.append((i, col, 2))  # High priority
+                                    logger.info(f"Column '{col}' contains sentiment values")
+                                elif 'category' in col.lower() or 'sentiment' in col.lower() or 'feedback' in col.lower():
+                                    potential_category_cols.append((i, col, 1))  # Medium priority
+                                else:
+                                    potential_category_cols.append((i, col, 0))  # Low priority
+
+                    # Sort by priority (highest first)
+                    potential_category_cols.sort(key=lambda x: x[2], reverse=True)
+
+                    if potential_category_cols:
+                        column_mapping['category'] = potential_category_cols[0][1]
+                        logger.info(f"Selected '{potential_category_cols[0][1]}' as category column")
+
+                # Look for ID column - typically the first column or one with numeric values
+                for i, col in enumerate(df.columns):
+                    if col not in [column_mapping.get('text'), column_mapping.get('category')]:
+                        if df[col].dtype in ['int64', 'float64'] or 'id' in col.lower():
+                            column_mapping['id'] = col
+                            logger.info(f"Selected '{col}' as ID column")
+                            break
+
+                logger.info(f"Mapped columns by position and content: {column_mapping}")
+
+            # Special case for "id, category feedback, text" format
+            elif len(df.columns) >= 3:
+                logger.info("Trying special case mapping for Twitter training data format")
+
+                # Check if this looks like Twitter training data (has 4 columns with the last being the text)
+                if len(df.columns) == 4:
+                    # Check if the third column contains sentiment values (Positive/Negative)
+                    third_col = df.columns[2]
+                    if df[third_col].dtype == 'object':
+                        values = df[third_col].astype(str).str.lower()
+                        has_sentiment = values.isin(['positive', 'negative', 'neutral']).any()
+                        if has_sentiment:
+                            logger.info(f"Detected Twitter training data format with sentiment in column '{third_col}'")
+                            column_mapping['id'] = df.columns[0]
+                            column_mapping['category'] = df.columns[2]  # Sentiment is in the third column
+                            column_mapping['text'] = df.columns[3]      # Text is in the fourth column
+                            logger.info(f"Twitter training data mapping: {column_mapping}")
+                            # Don't return, just continue with the mapped columns
+
+                # Generic 3-column case
+                logger.info("Trying generic 3-column mapping for 'id, category, text' format")
+                column_mapping['id'] = df.columns[0]
+
+                # For the remaining columns, determine which is more likely to be text vs. category
+                if len(df.columns) >= 3:
+                    # Check content length to determine which is text
+                    col1_len = df[df.columns[1]].astype(str).str.len().mean()
+                    col2_len = df[df.columns[2]].astype(str).str.len().mean()
+
+                    if col1_len > col2_len:
+                        column_mapping['text'] = df.columns[1]
+                        column_mapping['category'] = df.columns[2]
+                    else:
+                        column_mapping['category'] = df.columns[1]
+                        column_mapping['text'] = df.columns[2]
+
+                    logger.info(f"Special case mapping based on content length: {column_mapping}")
+
+        # If we haven't mapped the text column yet, try the standard approach
         if 'text' not in column_mapping:
-            # If no exact match, look for columns containing these words
-            for col in df.columns:
-                if any(candidate in col.lower() for candidate in text_column_candidates):
-                    column_mapping['text'] = col
+            # Find text column - required
+            text_column_candidates = ['text', 'review', 'content', 'comment', 'description']
+
+            # First check if there's a column explicitly named 'text'
+            if 'text' in df.columns:
+                column_mapping['text'] = 'text'
+                logger.info("Found explicit 'text' column")
+            else:
+                # Try other common text column names
+                for candidate in text_column_candidates:
+                    if candidate in df.columns:
+                        column_mapping['text'] = candidate
+                        logger.info(f"Found text column: '{candidate}'")
+                        break
+
+            # Special case: if we have both 'feedback' and 'category' columns, 'feedback' is likely the text
+            # But if we only have 'feedback', it might be the category
+            if 'text' not in column_mapping and 'feedback' in df.columns:
+                if 'category' in df.columns or any('category' in col.lower() for col in df.columns):
+                    # We have both category and feedback, so feedback is likely the text
+                    column_mapping['text'] = 'feedback'
+                    logger.info("Using 'feedback' column as text since 'category' also exists")
+                else:
+                    # Check if feedback column has longer text that looks like reviews
+                    if df['feedback'].dtype == 'object' and df['feedback'].str.len().mean() > 20:
+                        column_mapping['text'] = 'feedback'
+                        logger.info("Using 'feedback' column as text based on content length")
+
+            if 'text' not in column_mapping:
+                # If no exact match, look for columns containing these words
+                for col in df.columns:
+                    if any(candidate in col.lower() for candidate in text_column_candidates):
+                        column_mapping['text'] = col
+                        break
+
+            if 'text' not in column_mapping:
+                # If still no match, use the first string column with reasonable content
+                for col in df.columns:
+                    if df[col].dtype == 'object' and df[col].str.len().mean() > 10:
+                        column_mapping['text'] = col
+                        break
+
+            if 'text' not in column_mapping:
+                raise HTTPException(status_code=400,
+                                detail="Could not identify a text column in the CSV. Please ensure your CSV contains review text.")
+
+            # Find username column - optional
+            username_column_candidates = ['username', 'user', 'name', 'author', 'reviewer']
+            for candidate in username_column_candidates:
+                if candidate in df.columns:
+                    column_mapping['username'] = candidate
                     break
 
-        if 'text' not in column_mapping:
-            # If still no match, use the first string column with reasonable content
-            for col in df.columns:
-                if df[col].dtype == 'object' and df[col].str.len().mean() > 10:
-                    column_mapping['text'] = col
+            # Find category column - optional
+            category_column_candidates = ['category', 'feedback', 'sentiment', 'type', 'class', 'category feedback', 'categoryfeedback']
+            for candidate in category_column_candidates:
+                if candidate in df.columns:
+                    column_mapping['category'] = candidate
+                    logger.info(f"Found category column: '{candidate}'")
                     break
 
-        if 'text' not in column_mapping:
-            raise HTTPException(status_code=400,
-                               detail="Could not identify a text column in the CSV. Please ensure your CSV contains review text.")
-
-        # Find username column - optional
-        username_column_candidates = ['username', 'user', 'name', 'author', 'reviewer']
-        for candidate in username_column_candidates:
-            if candidate in df.columns:
-                column_mapping['username'] = candidate
-                break
+            # Check for partial matches if no exact match
+            if 'category' not in column_mapping:
+                for col in df.columns:
+                    if any(candidate in col.lower() for candidate in ['category', 'feedback']):
+                        column_mapping['category'] = col
+                        logger.info(f"Found category column by partial match: '{col}'")
+                        break
 
         # Find rating column - optional
         rating_column_candidates = ['rating', 'score', 'stars', 'grade', 'rank']
@@ -116,17 +386,92 @@ async def upload_csv(file: UploadFile = File(...)):
 
         # Create reviews from CSV data
         reviews = []
-        for _, row in df.iterrows():
+
+        # Log the final column mapping for debugging
+        logger.info(f"Final column mapping to be used: {column_mapping}")
+
+        # Check if we have the required text column
+        if 'text' not in column_mapping:
+            logger.error("No text column found in the CSV. Cannot process reviews.")
+            raise HTTPException(status_code=400, detail="Could not identify a text column in the CSV. Please ensure your CSV contains review text.")
+
+        for idx, row in df.iterrows():
+            # Log the raw row data for debugging (first few rows only)
+            if idx < 3:
+                logger.info(f"Processing row {idx}: {row.to_dict()}")
+
             # Skip rows with empty text
             if pd.isna(row[column_mapping['text']]) or str(row[column_mapping['text']]).strip() == '':
+                logger.warning(f"Skipping row {idx} due to empty text")
                 continue
 
+            # Create the basic review data structure
             review_data = {
                 'text': str(row[column_mapping['text']]),
                 'username': str(row[column_mapping['username']]) if 'username' in column_mapping and not pd.isna(row[column_mapping['username']]) else None,
                 'rating': float(row[column_mapping['rating']]) if 'rating' in column_mapping and not pd.isna(row[column_mapping['rating']]) else None,
-                'timestamp': row[column_mapping['timestamp']] if 'timestamp' in column_mapping and not pd.isna(row[column_mapping['timestamp']]) else None
+                'timestamp': row[column_mapping['timestamp']] if 'timestamp' in column_mapping and not pd.isna(row[column_mapping['timestamp']]) else None,
+                'source': 'csv'  # Add source information
             }
+
+            # Add metadata for additional columns
+            metadata = {}
+
+            # Add ID if available
+            if 'id' in column_mapping and not pd.isna(row[column_mapping['id']]):
+                id_value = str(row[column_mapping['id']])
+                metadata['id'] = id_value
+                logger.info(f"Row {idx} - ID value: '{id_value}'")
+
+            # Special handling for Twitter training data - add game information
+            if is_twitter_training and 'game' in df.columns and not pd.isna(row['game']):
+                game_value = str(row['game']).strip()
+                metadata['game'] = game_value
+                logger.info(f"Row {idx} - Game value: '{game_value}'")
+
+            # Add category feedback if available
+            if 'category' in column_mapping and not pd.isna(row[column_mapping['category']]):
+                category_value = str(row[column_mapping['category']]).strip()
+                metadata['category_feedback'] = category_value
+
+                # Log the category value for debugging
+                logger.info(f"Row {idx} - Category value: '{category_value}'")
+
+                # Try to map the category to our internal categories
+                if category_value.lower() in ['positive', 'pos', 'good', 'p']:
+                    metadata['predefined_category'] = 'positive_feedback'
+                elif category_value.lower() in ['negative', 'neg', 'bad', 'n']:
+                    metadata['predefined_category'] = 'pain_point'
+                elif category_value.lower() in ['request', 'feature', 'suggestion', 'r']:
+                    metadata['predefined_category'] = 'feature_request'
+                # Add more mappings for common category values
+                elif any(term in category_value.lower() for term in ['bug', 'issue', 'problem', 'error', 'crash', 'fail']):
+                    metadata['predefined_category'] = 'pain_point'
+                elif any(term in category_value.lower() for term in ['enhancement', 'improvement', 'add', 'new', 'want']):
+                    metadata['predefined_category'] = 'feature_request'
+                elif any(term in category_value.lower() for term in ['praise', 'compliment', 'like', 'love', 'great']):
+                    metadata['predefined_category'] = 'positive_feedback'
+
+                # Log the mapped category
+                if 'predefined_category' in metadata:
+                    logger.info(f"Row {idx} - Mapped to category: '{metadata['predefined_category']}'")
+                else:
+                    logger.info(f"Row {idx} - No category mapping found for: '{category_value}'")
+
+            # Add any other columns as additional metadata
+            for col in df.columns:
+                if col not in [column_mapping.get('text'), column_mapping.get('username'),
+                              column_mapping.get('rating'), column_mapping.get('timestamp'),
+                              column_mapping.get('id'), column_mapping.get('category')]:
+                    if not pd.isna(row[col]):
+                        metadata[f'extra_{col}'] = str(row[col])
+
+            # Add metadata to review data
+            review_data['metadata'] = metadata
+
+            # Log the final review data structure (first few rows only)
+            if idx < 3:
+                logger.info(f"Final review data for row {idx}: {review_data}")
 
             try:
                 review = ReviewCreate(**review_data)
@@ -136,15 +481,16 @@ async def upload_csv(file: UploadFile = File(...)):
                 logger.error(f"Error processing row: {str(e)}")
                 continue
 
-        # Extract texts for batch processing
+        # Extract texts and metadata for batch processing
         texts = [review.text for review in reviews]
+        metadata_list = [review.metadata for review in reviews]
 
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} reviews from CSV in batch")
         start_time = time.time()
 
-        # Process all texts in batch
-        analyses = analyzer.analyze_texts_batch(texts)
+        # Process all texts in batch with metadata
+        analyses = analyzer.analyze_texts_batch(texts, metadata_list)
 
         processing_time = time.time() - start_time
         logger.info(f"Batch analysis of CSV reviews completed in {processing_time:.2f} seconds")
@@ -235,15 +581,16 @@ async def scrape_data(
 @router.post("/analyze", response_model=List[ReviewResponse])
 async def analyze_reviews(reviews: List[ReviewCreate]):
     try:
-        # Extract texts for batch processing
+        # Extract texts and metadata for batch processing
         texts = [review.text for review in reviews]
+        metadata_list = [review.metadata for review in reviews if hasattr(review, 'metadata')]
 
         # Use batch processing for better performance
         logger.info(f"Analyzing {len(texts)} reviews in batch")
         start_time = time.time()
 
-        # Process all texts in batch
-        analyses = analyzer.analyze_texts_batch(texts)
+        # Process all texts in batch with metadata
+        analyses = analyzer.analyze_texts_batch(texts, metadata_list)
 
         processing_time = time.time() - start_time
         logger.info(f"Batch analysis completed in {processing_time:.2f} seconds")

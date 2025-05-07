@@ -46,8 +46,8 @@ class GeminiService:
         # Circuit breaker pattern
         self.circuit_open = False  # When True, circuit is "open" and we bypass Gemini API completely
         self.circuit_reset_time = 0  # When to try closing the circuit again
-        self.failure_threshold = 3  # Number of consecutive failures before opening circuit
-        self.circuit_reset_timeout = 2 * 60  # 2 minutes - how long to keep circuit open
+        self.failure_threshold = 2  # Number of consecutive failures before opening circuit (reduced from 3)
+        self.circuit_reset_timeout = 10 * 60  # 10 minutes - how long to keep circuit open
 
         # Cache for API responses
         self.sentiment_cache = {}
@@ -160,6 +160,7 @@ class GeminiService:
         Returns:
             Dictionary with sentiment analysis results
         """
+        # Check for any condition that would prevent API use and return fallback immediately
         if not self.available:
             logger.warning("Gemini API not available for sentiment analysis")
             return {"score": 0.5, "label": "NEUTRAL", "confidence": 0.0}
@@ -168,14 +169,17 @@ class GeminiService:
         if text in self.sentiment_cache:
             return self.sentiment_cache[text]
 
-        # Check if circuit breaker is open
-        if self._check_circuit_breaker():
-            logger.info("Circuit breaker open. Using fallback sentiment analysis.")
-            return {"score": 0.5, "label": "NEUTRAL", "confidence": 0.0}
+        # Combined check for circuit breaker and rate limiting
+        circuit_open = self._check_circuit_breaker()
+        rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
 
-        # Check if we're currently rate limited
-        if self.rate_limited and time.time() < self.rate_limit_reset_time:
-            logger.info(f"Using fallback sentiment analysis due to rate limiting (resets in {int(self.rate_limit_reset_time - time.time())} seconds)")
+        if circuit_open or rate_limited:
+            if circuit_open:
+                logger.info("Circuit breaker open. Using fallback sentiment analysis.")
+            else:
+                logger.info(f"Using fallback sentiment analysis due to rate limiting (resets in {int(self.rate_limit_reset_time - time.time())} seconds)")
+
+            # Use the same fallback for both conditions
             return {"score": 0.5, "label": "NEUTRAL", "confidence": 0.0}
 
         try:
@@ -256,6 +260,7 @@ class GeminiService:
         Returns:
             List of dictionaries with analysis results
         """
+        # Early check for circuit breaker or rate limiting to avoid unnecessary processing
         if not self.available:
             logger.warning("Gemini API not available for review analysis")
             return [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in reviews]
@@ -295,12 +300,38 @@ class GeminiService:
             batches = [uncached_reviews[i:i+20] for i in range(0, len(uncached_reviews), 20)]
             batch_indices = [uncached_indices[i:i+20] for i in range(0, len(uncached_indices), 20)]
 
-            # Process each batch
+            # Check circuit breaker state once before processing all batches
+            circuit_open = self._check_circuit_breaker()
+            rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
+
+            # If circuit is open or rate limited, process all reviews with fallback at once
+            if circuit_open or rate_limited:
+                if circuit_open:
+                    logger.info(f"Circuit breaker open. Using fallback for all {len(reviews)} reviews at once")
+                else:
+                    logger.info(f"Rate limited. Using fallback for all {len(reviews)} reviews at once")
+
+                # Create fallback results for all reviews at once
+                fallback_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in reviews]
+
+                # No need to process batches, just return the fallback results
+                return fallback_results
+
+            # Process each batch normally if circuit is closed and not rate limited
             for i, (batch, indices) in enumerate(zip(batches, batch_indices)):
                 logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
 
-                # Process this batch
-                batch_results = self._analyze_reviews_single_batch(batch)
+                # Check if circuit breaker is open before processing this batch (in case it opened during processing)
+                if self._check_circuit_breaker():
+                    logger.info(f"Circuit breaker open. Using fallback for batch {i+1}/{len(batches)}")
+                    batch_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in batch]
+                # Check if we're currently rate limited
+                elif self.rate_limited and time.time() < self.rate_limit_reset_time:
+                    logger.info(f"Rate limited. Using fallback for batch {i+1}/{len(batches)}")
+                    batch_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in batch]
+                else:
+                    # Process this batch with Gemini API
+                    batch_results = self._analyze_reviews_single_batch(batch)
 
                 # Update results and cache
                 for j, result in enumerate(batch_results):
@@ -309,13 +340,22 @@ class GeminiService:
                     self.sentiment_cache[batch[j]] = result
 
                 # Add a small delay between batches to avoid rate limiting
-                if i < len(batches) - 1:
+                if i < len(batches) - 1 and not self._check_circuit_breaker() and not self.rate_limited:
                     time.sleep(1)
 
             return results
         else:
-            # Process all uncached reviews in a single batch
-            batch_results = self._analyze_reviews_single_batch(uncached_reviews)
+            # Check if circuit breaker is open before processing
+            if self._check_circuit_breaker():
+                logger.info(f"Circuit breaker open. Using fallback for single batch with {len(uncached_reviews)} reviews")
+                batch_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in uncached_reviews]
+            # Check if we're currently rate limited
+            elif self.rate_limited and time.time() < self.rate_limit_reset_time:
+                logger.info(f"Rate limited. Using fallback for single batch with {len(uncached_reviews)} reviews")
+                batch_results = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in uncached_reviews]
+            else:
+                # Process all uncached reviews in a single batch with Gemini API
+                batch_results = self._analyze_reviews_single_batch(uncached_reviews)
 
             # Update results and cache
             for i, result in enumerate(batch_results):
@@ -409,6 +449,7 @@ class GeminiService:
         Returns:
             Dictionary with insights
         """
+        # Early check for circuit breaker or rate limiting to avoid unnecessary processing
         if not self.available:
             logger.warning("Gemini API not available for insight extraction")
             return {
@@ -458,11 +499,58 @@ class GeminiService:
                 all_positive_aspects = []
                 batch_summaries = []
 
+                # Check circuit breaker state and rate limit status once before processing
+                circuit_open = self._check_circuit_breaker()
+                rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
+
+                # If circuit is open or rate limited, return fallback insights immediately
+                if circuit_open or rate_limited:
+                    if circuit_open:
+                        logger.info(f"Circuit breaker open. Using fallback insights for all {len(reviews)} reviews at once")
+                        return {
+                            "summary": "Using local processing due to API reliability issues",
+                            "key_points": ["Circuit breaker active - temporarily using local processing"],
+                            "pain_points": ["API reliability issues detected"],
+                            "feature_requests": ["Will automatically retry Gemini API later"],
+                            "positive_aspects": ["Basic analysis still available during API issues"]
+                        }
+                    else:
+                        logger.info(f"Rate limited. Using fallback insights for all {len(reviews)} reviews at once")
+                        return {
+                            "summary": "Rate limit exceeded. Using local processing temporarily.",
+                            "key_points": ["Rate limit active - temporarily using local processing"],
+                            "pain_points": ["API rate limits reached"],
+                            "feature_requests": ["Will automatically retry Gemini API when limits reset"],
+                            "positive_aspects": ["Basic analysis still available during rate limiting"]
+                        }
+
+                # Process each batch normally if circuit is closed and not rate limited
                 for i, batch in enumerate(batches):
                     logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
 
-                    # Process this batch
-                    batch_result = self._extract_insights_single_batch(batch)
+                    # Check if circuit breaker is open before processing this batch (in case it opened during processing)
+                    if self._check_circuit_breaker():
+                        logger.info(f"Circuit breaker open. Using fallback for batch {i+1}/{len(batches)}")
+                        batch_result = {
+                            "summary": "Using local processing due to API reliability issues",
+                            "key_points": ["Circuit breaker active - temporarily using local processing"],
+                            "pain_points": ["API reliability issues detected"],
+                            "feature_requests": ["Will automatically retry Gemini API later"],
+                            "positive_aspects": ["Basic analysis still available during API issues"]
+                        }
+                    # Check if we're currently rate limited
+                    elif self.rate_limited and time.time() < self.rate_limit_reset_time:
+                        logger.info(f"Rate limited. Using fallback for batch {i+1}/{len(batches)}")
+                        batch_result = {
+                            "summary": "Rate limit exceeded. Using local processing temporarily.",
+                            "key_points": ["Rate limit active - temporarily using local processing"],
+                            "pain_points": ["API rate limits reached"],
+                            "feature_requests": ["Will automatically retry Gemini API when limits reset"],
+                            "positive_aspects": ["Basic analysis still available during rate limiting"]
+                        }
+                    else:
+                        # Process this batch with Gemini API
+                        batch_result = self._extract_insights_single_batch(batch)
 
                     # Collect results
                     batch_summaries.append(batch_result.get("summary", ""))
@@ -472,7 +560,7 @@ class GeminiService:
                     all_positive_aspects.extend(batch_result.get("positive_aspects", []))
 
                     # Add a small delay between batches to avoid rate limiting
-                    if i < len(batches) - 1:
+                    if i < len(batches) - 1 and not self._check_circuit_breaker() and not self.rate_limited:
                         time.sleep(1)
 
                 # Generate a combined summary
@@ -520,8 +608,29 @@ class GeminiService:
 
                 return result
             else:
-                # Process all reviews in a single batch
-                return self._extract_insights_single_batch(reviews)
+                # Check if circuit breaker is open before processing
+                if self._check_circuit_breaker():
+                    logger.info(f"Circuit breaker open. Using fallback for single batch with {len(reviews)} reviews")
+                    return {
+                        "summary": "Using local processing due to API reliability issues",
+                        "key_points": ["Circuit breaker active - temporarily using local processing"],
+                        "pain_points": ["API reliability issues detected"],
+                        "feature_requests": ["Will automatically retry Gemini API later"],
+                        "positive_aspects": ["Basic analysis still available during API issues"]
+                    }
+                # Check if we're currently rate limited
+                elif self.rate_limited and time.time() < self.rate_limit_reset_time:
+                    logger.info(f"Rate limited. Using fallback for single batch with {len(reviews)} reviews")
+                    return {
+                        "summary": "Rate limit exceeded. Using local processing temporarily.",
+                        "key_points": ["Rate limit active - temporarily using local processing"],
+                        "pain_points": ["API rate limits reached"],
+                        "feature_requests": ["Will automatically retry Gemini API when limits reset"],
+                        "positive_aspects": ["Basic analysis still available during rate limiting"]
+                    }
+                else:
+                    # Process all reviews in a single batch with Gemini API
+                    return self._extract_insights_single_batch(reviews)
 
         except Exception as e:
             logger.error(f"Error in Gemini insight extraction: {str(e)}")

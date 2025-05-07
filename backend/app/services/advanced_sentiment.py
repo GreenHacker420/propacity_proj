@@ -436,5 +436,247 @@ class AdvancedSentimentAnalyzer:
             "confidence": final_confidence
         }
 
+    def analyze_sentiment_batch(self, texts: List[str]) -> List[Dict[str, Any]]:
+        """
+        Perform batch sentiment analysis on multiple texts
+
+        Args:
+            texts: List of texts to analyze
+
+        Returns:
+            List of dictionaries with sentiment analysis results
+        """
+        logger.info(f"Processing batch of {len(texts)} texts")
+
+        # Initialize results list
+        results = []
+
+        # Process texts in batches of 20 for better performance
+        batch_size = 20
+
+        # Pre-process all texts
+        cleaned_texts = [self._clean_text(text) if text and text.strip() else "" for text in texts]
+
+        # Batch process transformer sentiment if available
+        transformer_sentiments = []
+        if self.sentiment_model:
+            try:
+                # Process non-empty texts in batches
+                valid_indices = [i for i, text in enumerate(cleaned_texts) if text]
+                valid_texts = [cleaned_texts[i] for i in valid_indices]
+
+                if valid_texts:
+                    logger.info(f"Batch processing {len(valid_texts)} non-empty texts with transformer model")
+
+                    # Process in batches to avoid memory issues
+                    batch_results = []
+                    for i in range(0, len(valid_texts), batch_size):
+                        batch = valid_texts[i:i+batch_size]
+                        # Truncate texts to 512 tokens for transformer model
+                        truncated_batch = [text[:512] for text in batch]
+                        batch_result = self.sentiment_model(truncated_batch)
+                        batch_results.extend(batch_result)
+
+                    # Process results
+                    valid_transformer_sentiments = []
+                    for results in batch_results:
+                        # Check if results is already a dictionary with 'label' and 'score'
+                        if isinstance(results, dict) and 'label' in results and 'score' in results:
+                            # Direct format from transformer model
+                            label = results['label']
+                            score = results['score']
+                            confidence = results.get('confidence', score)
+                        else:
+                            # Extract scores for POSITIVE and NEGATIVE labels
+                            try:
+                                scores = {item['label']: item['score'] for item in results}
+
+                                if 'POSITIVE' in scores:
+                                    score = scores['POSITIVE']
+                                    label = "POSITIVE" if score > 0.5 else "NEGATIVE"
+                                    confidence = scores['POSITIVE'] if label == "POSITIVE" else scores['NEGATIVE']
+                                else:
+                                    # Handle different label formats
+                                    positive_score = next((item['score'] for item in results if item['label'].lower() in ['positive', 'pos']), 0.5)
+                                    score = positive_score
+                                    label = "POSITIVE" if score > 0.5 else "NEGATIVE"
+                                    confidence = score if label == "POSITIVE" else (1.0 - score)
+                            except (TypeError, KeyError) as e:
+                                # Handle unexpected format
+                                logger.warning(f"Unexpected result format: {results}. Error: {str(e)}")
+                                score = 0.5
+                                label = "NEUTRAL"
+                                confidence = 0.0
+
+                        # Adjust score to be between 0 and 1
+                        if label == "NEGATIVE":
+                            score = 1.0 - score
+
+                        # Set NEUTRAL for borderline cases
+                        if 0.4 <= score <= 0.6:
+                            label = "NEUTRAL"
+                            confidence = 1.0 - abs(score - 0.5) * 2  # Confidence decreases as we get closer to 0.5
+
+                        valid_transformer_sentiments.append({"score": score, "label": label, "confidence": confidence})
+
+                    # Map back to original indices
+                    transformer_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+                    for i, sentiment in zip(valid_indices, valid_transformer_sentiments):
+                        transformer_sentiments[i] = sentiment
+                else:
+                    transformer_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+            except Exception as e:
+                logger.error(f"Error in batch transformer sentiment analysis: {str(e)}")
+                transformer_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+        else:
+            transformer_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+
+        # Batch process VADER sentiment
+        vader_sentiments = []
+        if self.vader_analyzer:
+            try:
+                logger.info("Batch processing with VADER sentiment analyzer")
+                for text in cleaned_texts:
+                    if not text:
+                        vader_sentiments.append({"score": 0.5, "label": "NEUTRAL", "confidence": 0.0})
+                        continue
+
+                    sentiment_scores = self.vader_analyzer.polarity_scores(text)
+                    compound_score = sentiment_scores['compound']
+
+                    # Convert compound score from [-1, 1] to [0, 1]
+                    normalized_score = (compound_score + 1) / 2
+
+                    # Determine sentiment label
+                    if compound_score >= 0.05:
+                        label = "POSITIVE"
+                    elif compound_score <= -0.05:
+                        label = "NEGATIVE"
+                    else:
+                        label = "NEUTRAL"
+
+                    # Calculate confidence based on the magnitude of the compound score
+                    confidence = abs(compound_score)
+
+                    vader_sentiments.append({"score": normalized_score, "label": label, "confidence": confidence})
+            except Exception as e:
+                logger.error(f"Error in batch VADER sentiment analysis: {str(e)}")
+                vader_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+        else:
+            vader_sentiments = [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in texts]
+
+        # Batch process sarcasm detection
+        sarcasm_results = []
+        if self.sarcasm_model:
+            try:
+                # Process non-empty texts in batches
+                valid_indices = [i for i, text in enumerate(cleaned_texts) if text]
+                valid_texts = [cleaned_texts[i] for i in valid_indices]
+
+                if valid_texts:
+                    logger.info(f"Batch processing {len(valid_texts)} non-empty texts with sarcasm model")
+
+                    # Process in batches to avoid memory issues
+                    batch_results = []
+                    for i in range(0, len(valid_texts), batch_size):
+                        batch = valid_texts[i:i+batch_size]
+                        # Truncate texts to 512 tokens for transformer model
+                        truncated_batch = [text[:512] for text in batch]
+                        batch_result = self.sarcasm_model(truncated_batch)
+                        batch_results.extend(batch_result)
+
+                    # Process results
+                    valid_sarcasm_results = []
+                    for results in batch_results:
+                        model_sarcasm_score = next((item['score'] for item in results if item['label'] == 'SARCASM'), 0.0)
+                        valid_sarcasm_results.append((model_sarcasm_score > 0.5, model_sarcasm_score))
+
+                    # Map back to original indices
+                    sarcasm_results = [(False, 0.0) for _ in texts]
+                    for i, result in zip(valid_indices, valid_sarcasm_results):
+                        sarcasm_results[i] = result
+                else:
+                    sarcasm_results = [(False, 0.0) for _ in texts]
+            except Exception as e:
+                logger.error(f"Error in batch sarcasm detection: {str(e)}")
+                sarcasm_results = [(False, 0.0) for _ in texts]
+        else:
+            # Fall back to rule-based sarcasm detection
+            for text in cleaned_texts:
+                if not text:
+                    sarcasm_results.append((False, 0.0))
+                    continue
+
+                # Rule-based sarcasm detection
+                sarcasm_score = 0.0
+
+                # Check for sarcasm indicators
+                for indicator in self.sarcasm_indicators:
+                    if indicator in text:
+                        sarcasm_score += 0.2
+
+                # Check for punctuation patterns
+                for pattern in self.punctuation_patterns:
+                    if re.search(pattern, text):
+                        sarcasm_score += 0.15
+
+                # Check for mixed case (e.g., "SuRe ThInG")
+                if re.search(r'[A-Z][a-z][A-Z]', text):
+                    sarcasm_score += 0.25
+
+                # Cap the score at 1.0
+                sarcasm_score = min(sarcasm_score, 1.0)
+
+                sarcasm_results.append((sarcasm_score > 0.5, sarcasm_score))
+
+        # Process context analysis and aspect sentiments for each text
+        for i, text in enumerate(texts):
+            if not text or not text.strip():
+                results.append({
+                    "sentiment_score": 0.5,
+                    "sentiment_label": "NEUTRAL",
+                    "confidence": 0.0,
+                    "is_sarcastic": False,
+                    "sarcasm_confidence": 0.0,
+                    "context_analysis": {},
+                    "aspect_sentiments": []
+                })
+                continue
+
+            cleaned_text = cleaned_texts[i]
+
+            # Get context analysis
+            context_analysis = self._analyze_context(cleaned_text)
+
+            # Get aspect sentiments
+            aspect_sentiments = self._extract_aspect_sentiments(cleaned_text)
+
+            # Get sarcasm results
+            is_sarcastic, sarcasm_confidence = sarcasm_results[i]
+
+            # Combine all signals for final sentiment
+            final_sentiment = self._combine_sentiment_signals(
+                transformer_sentiments[i],
+                vader_sentiments[i],
+                context_analysis,
+                is_sarcastic
+            )
+
+            # Create final result
+            result = {
+                "sentiment_score": final_sentiment["score"],
+                "sentiment_label": final_sentiment["label"],
+                "confidence": final_sentiment["confidence"],
+                "is_sarcastic": is_sarcastic,
+                "sarcasm_confidence": sarcasm_confidence,
+                "context_analysis": context_analysis,
+                "aspect_sentiments": aspect_sentiments
+            }
+
+            results.append(result)
+
+        logger.info(f"Completed batch processing of {len(texts)} texts")
+        return results
+
 # Create an instance of the advanced sentiment analyzer
 advanced_sentiment_analyzer = AdvancedSentimentAnalyzer()

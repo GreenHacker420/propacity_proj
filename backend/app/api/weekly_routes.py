@@ -102,7 +102,18 @@ async def get_priority_insights(
                 source_type=source_type,
                 user_id=current_user.get("id") if current_user else None
             )
-            return insights.model_dump() if hasattr(insights, 'model_dump') else (insights.dict() if hasattr(insights, 'dict') else insights)
+            # Convert the Pydantic model to a dictionary
+            if isinstance(insights, list):
+                # Handle list of insights
+                logger.info(f"Received list of insights with {len(insights)} items")
+                return {"high_priority_items": insights}
+            elif hasattr(insights, 'model_dump'):
+                return insights.model_dump()
+            elif hasattr(insights, 'dict'):
+                # Use dict() method for backward compatibility with older Pydantic versions
+                return insights.dict()
+            else:
+                return insights
         except Exception as e:
             logger.warning(f"Error getting real insights, using mock data: {str(e)}")
 
@@ -318,7 +329,12 @@ async def test_weekly_summary():
 
         # Now save the test summary directly to the database
         collection = get_collection("weekly_summaries")
-        summary_dict = test_summary.model_dump() if hasattr(test_summary, 'model_dump') else test_summary.dict()
+        # Convert to dict using the appropriate method
+        if hasattr(test_summary, 'model_dump'):
+            summary_dict = test_summary.model_dump()
+        else:
+            # For backward compatibility with older Pydantic versions
+            summary_dict = test_summary.dict()
         summary_dict["created_at"] = datetime.now(timezone.utc)
         result = await collection.insert_one(summary_dict)
         summary_id = str(result.inserted_id)
@@ -354,8 +370,17 @@ async def test_weekly_summary():
         await reviews_collection.delete_one({"source_type": "test", "source_name": "test_app"})
 
         # Convert Pydantic models to dictionaries
-        retrieved_summary_dict = retrieved_summary.model_dump() if hasattr(retrieved_summary, 'model_dump') else retrieved_summary.dict()
-        insights_dict = insights.model_dump() if hasattr(insights, 'model_dump') else insights.dict()
+        if hasattr(retrieved_summary, 'model_dump'):
+            retrieved_summary_dict = retrieved_summary.model_dump()
+        else:
+            # For backward compatibility with older Pydantic versions
+            retrieved_summary_dict = retrieved_summary.dict()
+
+        if hasattr(insights, 'model_dump'):
+            insights_dict = insights.model_dump()
+        else:
+            # For backward compatibility with older Pydantic versions
+            insights_dict = insights.dict()
 
         return {
             "status": "success",
