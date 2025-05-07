@@ -32,10 +32,14 @@ sudo apt update
 echo -e "\n${GREEN}=== Installing Python 3.11 ===${NC}"
 sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
 
-# Install Node.js
+# Install Node.js (using version 20 for better ES modules support)
 echo -e "\n${GREEN}=== Installing Node.js ===${NC}"
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
+
+# Verify Node.js version
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
 
 # Install Nginx
 echo -e "\n${GREEN}=== Installing Nginx ===${NC}"
@@ -49,7 +53,15 @@ source venv/bin/activate
 # Install Python dependencies
 echo -e "\n${GREEN}=== Installing Python dependencies ===${NC}"
 pip install --upgrade pip
-pip install -r backend/requirements.txt
+
+# Check if AWS requirements file exists
+if [ -f "backend/requirements.aws.txt" ]; then
+    echo "Installing AWS-specific requirements..."
+    pip install -r backend/requirements.aws.txt
+else
+    echo "AWS requirements file not found, using standard requirements..."
+    pip install -r backend/requirements.txt
+fi
 
 # Download NLTK resources
 echo -e "\n${GREEN}=== Downloading NLTK resources ===${NC}"
@@ -58,8 +70,31 @@ python backend/download_nltk_resources.py
 # Install frontend dependencies and build
 echo -e "\n${GREEN}=== Setting up frontend ===${NC}"
 cd frontend
+
+# Create a .env file for production
+echo "Creating .env file for production..."
+cat > .env << EOL
+VITE_API_URL=/api
+EOL
+
+# Install dependencies
+echo "Installing frontend dependencies..."
 npm install
-npm run build
+
+# Build the frontend
+echo "Building frontend..."
+NODE_ENV=production npm run build
+
+# Check if build was successful
+if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+    echo -e "${GREEN}Frontend build successful!${NC}"
+else
+    echo -e "${YELLOW}Warning: Frontend build directory is empty or does not exist.${NC}"
+    echo "Creating minimal dist directory..."
+    mkdir -p dist
+    echo "<html><body><h1>Product Review Analyzer</h1><p>Frontend build failed. Please check the logs.</p></body></html>" > dist/index.html
+fi
+
 cd ..
 
 # Configure Nginx
@@ -69,11 +104,35 @@ server {
     listen 80;
     server_name _;  # Will match any hostname
 
+    # Serve frontend static files directly
     location / {
-        proxy_pass http://localhost:8000;
+        root $(pwd)/frontend/dist;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # Proxy API requests to the backend
+    location /api {
+        proxy_pass http://localhost:8000/api;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Serve API documentation
+    location /docs {
+        proxy_pass http://localhost:8000/docs;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+    }
+
+    # Serve OpenAPI schema
+    location /openapi.json {
+        proxy_pass http://localhost:8000/openapi.json;
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_cache_bypass \$http_upgrade;
     }
@@ -87,7 +146,28 @@ sudo nginx -t && sudo systemctl restart nginx
 
 # Create systemd service
 echo -e "\n${GREEN}=== Creating systemd service ===${NC}"
-sudo tee /etc/systemd/system/product-review-analyzer.service << EOL
+
+# Check if gunicorn is available
+if $(pwd)/venv/bin/pip show gunicorn > /dev/null 2>&1; then
+    echo "Using Gunicorn for production deployment..."
+    sudo tee /etc/systemd/system/product-review-analyzer.service << EOL
+[Unit]
+Description=Product Review Analyzer
+After=network.target
+
+[Service]
+User=$(whoami)
+WorkingDirectory=$(pwd)
+ExecStart=$(pwd)/venv/bin/gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --access-logfile - --error-logfile - serve:app
+Restart=always
+Environment="PYTHONPATH=$(pwd):$(pwd)/backend"
+
+[Install]
+WantedBy=multi-user.target
+EOL
+else
+    echo "Gunicorn not found, using standard Python server..."
+    sudo tee /etc/systemd/system/product-review-analyzer.service << EOL
 [Unit]
 Description=Product Review Analyzer
 After=network.target
@@ -102,6 +182,7 @@ Environment="PYTHONPATH=$(pwd):$(pwd)/backend"
 [Install]
 WantedBy=multi-user.target
 EOL
+fi
 
 # Enable and start the service
 sudo systemctl daemon-reload

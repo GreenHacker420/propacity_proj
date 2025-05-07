@@ -9,12 +9,15 @@ export default defineConfig(({ mode }) => {
   // Use BACKEND_URL from environment variables if available, otherwise use localhost
   const backendUrl = env.BACKEND_URL || 'http://localhost:8000'
 
+  console.log(`Building for ${mode} mode with API URL: ${env.VITE_API_URL || '/api'}`)
+
   return {
     plugins: [react()],
     define: {
       // Define process.env for backward compatibility
       'process.env': {
-        REACT_APP_API_URL: JSON.stringify(env.VITE_API_URL || 'http://localhost:8000'),
+        REACT_APP_API_URL: JSON.stringify(env.VITE_API_URL || '/api'),
+        NODE_ENV: JSON.stringify(mode),
       },
     },
     server: {
@@ -49,6 +52,13 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
       // Reduce chunk size
       chunkSizeWarningLimit: 1600,
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true,
+          drop_debugger: true,
+        },
+      },
       rollupOptions: {
         output: {
           manualChunks: {

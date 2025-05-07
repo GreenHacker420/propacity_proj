@@ -4,7 +4,7 @@
   "description": "AI-Powered Feedback Analysis for Product Managers",
   "private": true,
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.0.0",
     "npm": ">=9.0.0"
   },
   "scripts": {
@@ -13,6 +13,7 @@
     "start:frontend": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "build": "cd frontend && npm install && npm run build",
+    "build:aws": "cd frontend && npm install && NODE_ENV=production npm run build",
     "start": "python serve.py"
   },
   "keywords": [

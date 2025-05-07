@@ -118,7 +118,9 @@ python3.11 -m venv venv
 source venv/bin/activate
 
 # Install backend dependencies
-pip install -r backend/requirements.txt
+pip install -r backend/requirements.aws.txt  # Use AWS-specific requirements for production
+# Or if the file doesn't exist:
+# pip install -r backend/requirements.txt
 
 # Download NLTK resources
 python backend/download_nltk_resources.py
@@ -127,6 +129,12 @@ python backend/download_nltk_resources.py
 cd frontend
 npm install
 ```
+
+The `requirements.aws.txt` file includes additional dependencies optimized for production deployment:
+- `gunicorn`: Production-grade WSGI server
+- `uvloop`: Ultra-fast asyncio event loop
+- `httptools`: Fast HTTP parsing
+- Additional performance optimizations
 
 ### Step 7: Build the Frontend
 
@@ -358,6 +366,15 @@ chmod +x /home/ubuntu/backup.sh
 4. **SSL Certificate Issues**:
    - Check Certbot logs: `sudo cat /var/log/letsencrypt/letsencrypt.log`
    - Renew certificate: `sudo certbot renew`
+
+5. **Frontend Build Issues**:
+   - If you encounter errors during frontend build like `SyntaxError: Cannot use import statement outside a module`, it's likely a Node.js version issue
+   - Solution: Use Node.js 20.x instead of 18.x for better ES modules support
+   - Run the `build_frontend_aws.sh` script to build the frontend separately:
+     ```bash
+     ./build_frontend_aws.sh
+     ```
+   - Check the frontend build logs for specific errors
 
 ## Security Best Practices
 
