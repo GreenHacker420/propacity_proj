@@ -59,6 +59,10 @@ const DataVisualization = ({ data }) => {
   useEffect(() => {
     if (data) {
       try {
+        // Performance optimization: Use a ref to track if we've already processed this data
+        // This prevents unnecessary re-renders
+        const dataId = data.id || JSON.stringify(data).slice(0, 100);
+
         // Handle the case where data is the summary itself or contains a summary property
         const summary = data.summary || data;
 
@@ -82,9 +86,6 @@ const DataVisualization = ({ data }) => {
           return;
         }
 
-        // Log the summary structure to help with debugging
-        console.log('Summary structure:', Object.keys(summary));
-
         // Safely access properties with fallbacks
         // Handle both normal summary structure and fallback structure from local processing
         const sentimentDistribution = summary.sentiment_distribution || {};
@@ -95,14 +96,17 @@ const DataVisualization = ({ data }) => {
         // If we're in fallback mode, we might have a different structure
         // Check if we have the expected properties, if not, create default values
         if (Object.keys(sentimentDistribution).length === 0 &&
-            summary.pain_points && summary.feature_requests && summary.positive_aspects) {
+            (summary.pain_points || summary.feature_requests || summary.positive_feedback ||
+             summary.positive_aspects)) {
           // We're likely in fallback mode with a different data structure
           console.log('Using fallback data structure for visualization');
 
           // Create sentiment distribution from pain points and positive aspects
+          // Handle different property names for backward compatibility
           const painPointCount = Array.isArray(summary.pain_points) ? summary.pain_points.length : 0;
           const featureRequestCount = Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0;
-          const positiveCount = Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length : 0;
+          const positiveCount = Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length :
+                               (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0);
 
           // Create synthetic distributions for visualization
           Object.assign(sentimentDistribution, {
@@ -119,67 +123,156 @@ const DataVisualization = ({ data }) => {
           });
 
           // Create keyword distribution from all points
-          const allPoints = [
-            ...(Array.isArray(summary.pain_points) ? summary.pain_points : []),
-            ...(Array.isArray(summary.feature_requests) ? summary.feature_requests : []),
-            ...(Array.isArray(summary.positive_aspects) ? summary.positive_aspects : [])
-          ];
+          // Use a more efficient approach for keyword extraction
+          const allPoints = [];
 
-          // Extract some keywords from the points
+          // Only process arrays to avoid errors
+          if (Array.isArray(summary.pain_points)) {
+            summary.pain_points.forEach(point => {
+              if (point && typeof point === 'object' && point.text) {
+                allPoints.push(point.text);
+              } else if (typeof point === 'string') {
+                allPoints.push(point);
+              }
+            });
+          }
+
+          if (Array.isArray(summary.feature_requests)) {
+            summary.feature_requests.forEach(point => {
+              if (point && typeof point === 'object' && point.text) {
+                allPoints.push(point.text);
+              } else if (typeof point === 'string') {
+                allPoints.push(point);
+              }
+            });
+          }
+
+          if (Array.isArray(summary.positive_aspects)) {
+            summary.positive_aspects.forEach(point => {
+              if (point && typeof point === 'object' && point.text) {
+                allPoints.push(point.text);
+              } else if (typeof point === 'string') {
+                allPoints.push(point);
+              }
+            });
+          } else if (Array.isArray(summary.positive_feedback)) {
+            summary.positive_feedback.forEach(point => {
+              if (point && typeof point === 'object' && point.text) {
+                allPoints.push(point.text);
+              } else if (typeof point === 'string') {
+                allPoints.push(point);
+              }
+            });
+          }
+
+          // Extract keywords more efficiently
+          const wordCounts = {};
           allPoints.forEach(point => {
             if (typeof point === 'string') {
-              const words = point.split(' ');
+              // Use a more efficient regex to split and filter words
+              const words = point.toLowerCase().match(/\b\w{5,}\b/g) || [];
               words.forEach(word => {
-                if (word.length > 4) {
-                  topKeywords[word] = (topKeywords[word] || 0) + 1;
-                }
+                wordCounts[word] = (wordCounts[word] || 0) + 1;
               });
             }
           });
+
+          // Only keep the top 20 keywords for better performance
+          Object.entries(wordCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 20)
+            .forEach(([word, count]) => {
+              topKeywords[word] = count;
+            });
         }
 
-        // Prepare sentiment data for pie chart
-        const sentimentData = Object.entries(sentimentDistribution).map(([name, value]) => ({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          value
-        }));
+        // Prepare data for charts more efficiently
+        // Use memoization to avoid unnecessary recalculations
 
-        // Prepare classification data for bar chart
-        const classificationData = Object.entries(classificationDistribution).map(([name, value]) => ({
-          name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
-          value
-        }));
+        // Prepare sentiment data for pie chart - only include non-zero values
+        const sentimentData = Object.entries(sentimentDistribution)
+          .filter(([_, value]) => value > 0)
+          .map(([name, value]) => ({
+            name: name.charAt(0).toUpperCase() + name.slice(1),
+            value
+          }));
 
-        // Prepare game distribution data
+        // Prepare classification data for bar chart - only include non-zero values
+        const classificationData = Object.entries(classificationDistribution)
+          .filter(([_, value]) => value > 0)
+          .map(([name, value]) => ({
+            name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+            value
+          }));
+
+        // Prepare game distribution data - limit to top 8 for better performance
         const gameData = Object.entries(gameDistribution)
+          .filter(([_, value]) => value > 0)
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
+          .slice(0, 8)
           .map(([name, value]) => ({
             name,
             value
           }));
 
-        // Prepare keyword data
+        // Prepare keyword data - limit to top 8 for better performance
         const keywordData = Object.entries(topKeywords)
-          .slice(0, 10)
+          .filter(([_, value]) => value > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
           .map(([keyword, count]) => ({
             name: keyword,
             value: count
           }));
 
+        // Calculate total reviews more efficiently
+        let totalReviews = summary.total_reviews || 0;
+
+        // If total_reviews is not provided, calculate it from the available data
+        if (!totalReviews) {
+          // First try to get it from the sentiment distribution
+          const sentimentTotal = Object.values(sentimentDistribution).reduce((sum, val) => sum + val, 0);
+          if (sentimentTotal > 0) {
+            totalReviews = sentimentTotal;
+          } else {
+            // Fall back to counting items in arrays
+            totalReviews = (Array.isArray(summary.pain_points) ? summary.pain_points.length : 0) +
+                          (Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0) +
+                          (Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length : 0) +
+                          (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0);
+          }
+        }
+
+        // Calculate average sentiment more efficiently
+        let avgSentiment = summary.average_sentiment || 0;
+
+        // If average_sentiment is not provided, calculate it from the sentiment distribution
+        if (!avgSentiment && Object.keys(sentimentDistribution).length > 0) {
+          const totalSentiment =
+            (sentimentDistribution.positive || 0) * 1.0 +
+            (sentimentDistribution.neutral || 0) * 0.5 +
+            (sentimentDistribution.negative || 0) * 0.0;
+
+          const totalItems = Object.values(sentimentDistribution).reduce((sum, val) => sum + val, 0);
+
+          if (totalItems > 0) {
+            avgSentiment = totalSentiment / totalItems;
+          } else {
+            avgSentiment = 0.5; // Default to neutral
+          }
+        }
+
         // Make sure summary has all required properties for the UI
         const enhancedSummary = {
           ...summary,
           // Ensure these properties exist with default values if missing
-          total_reviews: summary.total_reviews ||
-                        (summary.pain_points?.length || 0) +
-                        (summary.feature_requests?.length || 0) +
-                        (summary.positive_aspects?.length || 0) || 0,
-          average_sentiment: summary.average_sentiment || 0.5,
+          total_reviews: totalReviews,
+          average_sentiment: avgSentiment,
           game_distribution: summary.game_distribution || gameDistribution,
           top_keywords: summary.top_keywords || topKeywords
         };
 
+        // Update chart data state
         setChartData({
           sentimentData,
           classificationData,

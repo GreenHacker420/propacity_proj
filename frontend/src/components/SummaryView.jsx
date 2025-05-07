@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import DataVisualization from './DataVisualization';
 import ReviewsTable from './ReviewsTable';
@@ -9,9 +9,18 @@ import WeeklySummaryView from './WeeklySummaryView';
  */
 const SummaryView = ({ summary, onDownloadPDF }) => {
   const [activeView, setActiveView] = useState('analysis');
+  const [isLoading, setIsLoading] = useState(false);
 
   // For backward compatibility, use summary prop but fallback to data if needed
   const data = summary || null;
+
+  // Effect to track when data changes
+  useEffect(() => {
+    if (data) {
+      console.log('Summary data updated:', Object.keys(data));
+      setIsLoading(false);
+    }
+  }, [data]);
 
   if (!data) {
     return (
@@ -21,16 +30,16 @@ const SummaryView = ({ summary, onDownloadPDF }) => {
     );
   }
 
-  // Log the data structure to help with debugging
-  console.log('Summary data structure:', Object.keys(data));
-
   // Check for API errors in the summary data
   const hasApiError = data.error && data.error_source === "gemini_api";
-  const isQuotaError = hasApiError && data.error && data.error.includes && data.error.includes("quota");
+  const isQuotaError = hasApiError && data.error &&
+    (typeof data.error === 'string' && data.error.includes("quota"));
 
   // Check for rate limit or circuit breaker in the data
-  const isRateLimited = data.rate_limited === true || (data.summary && data.summary.includes && data.summary.includes("Rate limit exceeded"));
-  const isCircuitOpen = data.circuit_open === true || (data.summary && data.summary.includes && data.summary.includes("circuit breaker"));
+  const isRateLimited = data.rate_limited === true ||
+    (data.summary && typeof data.summary === 'string' && data.summary.includes("Rate limit exceeded"));
+  const isCircuitOpen = data.circuit_open === true ||
+    (data.summary && typeof data.summary === 'string' && data.summary.includes("circuit breaker"));
 
   return (
     <div className="space-y-8">

@@ -130,7 +130,7 @@ class GeminiService:
             logger.error(f"Error initializing Gemini API: {str(e)}")
             self.available = False
 
-    def _add_to_cache(self, text: str, result: Dict[str, Any], cache_type: str = "sentiment") -> None:
+    def _add_to_cache(self, text: str, result: Dict[str, Any], cache_type: str = "sentiment", expiration: Optional[int] = None) -> None:
         """
         Add a result to the specified cache and manage cache size.
 
@@ -138,6 +138,7 @@ class GeminiService:
             text: The text that was analyzed
             result: The analysis result
             cache_type: Type of cache to use ("sentiment", "insight", or "summary")
+            expiration: Optional expiration time in seconds
         """
         # Select the appropriate cache
         if cache_type == "sentiment":
@@ -160,10 +161,16 @@ class GeminiService:
             key = text
 
         # Add to cache with timestamp for LRU implementation
-        cache[key] = {
+        cache_entry = {
             "result": result,
             "timestamp": time.time()
         }
+
+        # Add expiration time if provided
+        if expiration:
+            cache_entry["expires_at"] = time.time() + expiration
+
+        cache[key] = cache_entry
 
         # Check if cache is too large
         if len(cache) > self.cache_size_limit:
@@ -181,14 +188,14 @@ class GeminiService:
 
     def _get_from_cache(self, text: str, cache_type: str = "sentiment") -> Optional[Dict[str, Any]]:
         """
-        Get a result from the specified cache.
+        Get a result from the specified cache, respecting expiration times.
 
         Args:
             text: The text to look up
             cache_type: Type of cache to use ("sentiment", "insight", or "summary")
 
         Returns:
-            The cached result or None if not found
+            The cached result or None if not found or expired
         """
         # Select the appropriate cache
         if cache_type == "sentiment":
@@ -210,10 +217,20 @@ class GeminiService:
 
         # Check if key exists in cache
         if key in cache:
+            cache_entry = cache[key]
+            current_time = time.time()
+
+            # Check if entry has expired
+            if "expires_at" in cache_entry and current_time > cache_entry["expires_at"]:
+                # Entry has expired, remove it
+                del cache[key]
+                self.cache_misses += 1
+                return None
+
             self.cache_hits += 1
             # Update timestamp to mark as recently used
-            cache[key]["timestamp"] = time.time()
-            return cache[key]["result"]
+            cache_entry["timestamp"] = current_time
+            return cache_entry["result"]
 
         self.cache_misses += 1
         return None
@@ -755,61 +772,119 @@ class GeminiService:
         Returns:
             Dictionary with insights
         """
+        # Check if we have enough reviews to process
+        if not reviews:
+            logger.warning("No reviews provided for insight extraction")
+            return {
+                "summary": "No reviews provided for analysis",
+                "key_points": ["No reviews to analyze"],
+                "pain_points": ["No reviews to analyze"],
+                "feature_requests": ["No reviews to analyze"],
+                "positive_aspects": ["No reviews to analyze"]
+            }
+
+        # Check for cached insights using a hash of all reviews
+        # This is more efficient than checking individual reviews
+        import hashlib
+        reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+        cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+
+        cached_insights = self._get_from_cache(cache_key, "insight")
+        if cached_insights:
+            logger.info(f"Using cached insights for batch of {len(reviews)} reviews")
+            return cached_insights
+
         # Early check for circuit breaker or rate limiting to avoid unnecessary processing
         if not self.available:
             logger.warning("Gemini API not available for insight extraction")
-            return {
+            fallback_result = {
                 "summary": "Insights not available - Gemini API not configured",
                 "key_points": ["Local processing active - Gemini API not available"],
                 "pain_points": ["Using local processing due to API unavailability"],
                 "feature_requests": ["Consider configuring Gemini API for better insights"],
                 "positive_aspects": ["Basic analysis still available without Gemini API"]
             }
+            # Cache the fallback result
+            self._add_to_cache(cache_key, fallback_result, "insight")
+            return fallback_result
 
         # Check if circuit breaker is open
         if self._check_circuit_breaker():
             logger.info("Circuit breaker open. Using fallback insight extraction.")
-            return {
+            fallback_result = {
                 "summary": "Using local processing due to API reliability issues",
                 "key_points": ["Circuit breaker active - temporarily using local processing"],
                 "pain_points": ["API reliability issues detected"],
                 "feature_requests": ["Will automatically retry Gemini API later"],
                 "positive_aspects": ["Basic analysis still available during API issues"]
             }
+            # Cache the fallback result
+            self._add_to_cache(cache_key, fallback_result, "insight")
+            return fallback_result
 
         # Check if we're currently rate limited
         if self.rate_limited and time.time() < self.rate_limit_reset_time:
             logger.warning(f"Rate limited for insight extraction. Retry after {int(self.rate_limit_reset_time - time.time())} seconds.")
-            return {
+            fallback_result = {
                 "summary": "Rate limit exceeded. Using local processing temporarily.",
                 "key_points": ["Rate limit active - temporarily using local processing"],
                 "pain_points": ["API rate limits reached"],
                 "feature_requests": ["Will automatically retry Gemini API when limits reset"],
                 "positive_aspects": ["Basic analysis still available during rate limiting"]
             }
+            # Cache the fallback result
+            self._add_to_cache(cache_key, fallback_result, "insight")
+            return fallback_result
 
         try:
             start_time = time.time()
 
             # Process reviews in optimized batches if there are too many
-            if len(reviews) > 50:  # Increased batch size from 20 to 50 for better efficiency
+            # Increased threshold for better performance
+            if len(reviews) > 100:  # Increased from 50 to 100
                 logger.info(f"Processing {len(reviews)} reviews in batches for insight extraction")
 
-                # Calculate optimal batch size based on review length
-                avg_review_length = sum(len(review) for review in reviews) / len(reviews)
+                # Calculate optimal batch size based on review length with improved algorithm
+                total_length = sum(len(review) for review in reviews)
+                avg_review_length = total_length / len(reviews)
 
-                # Adjust batch size based on average review length - increased for better performance
-                # Shorter reviews can be processed in larger batches
-                if avg_review_length < 100:
-                    batch_size = 200  # Very short reviews
-                elif avg_review_length < 200:
-                    batch_size = 150  # Short reviews
-                elif avg_review_length < 500:
-                    batch_size = 100  # Medium reviews
-                else:
-                    batch_size = 60   # Long reviews
+                # Dynamically adjust batch size based on review length
+                # This is more efficient than fixed thresholds
+                try:
+                    import psutil
+                    available_memory = psutil.virtual_memory().available / (1024 * 1024)  # MB
 
-                logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
+                    # Calculate batch size based on available memory and average review length
+                    # Use a more aggressive approach for production
+                    memory_factor = max(1, min(10, available_memory / 1000))  # Scale factor based on available memory
+
+                    # Base batch size on review length and available memory
+                    if avg_review_length < 100:
+                        batch_size = int(300 * memory_factor)  # Very short reviews
+                    elif avg_review_length < 200:
+                        batch_size = int(200 * memory_factor)  # Short reviews
+                    elif avg_review_length < 500:
+                        batch_size = int(150 * memory_factor)  # Medium reviews
+                    else:
+                        batch_size = int(100 * memory_factor)  # Long reviews
+
+                    # Cap batch size to reasonable limits
+                    batch_size = max(50, min(500, batch_size))
+
+                    logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars " +
+                               f"(Available memory: {available_memory:.1f} MB, Memory factor: {memory_factor:.1f})")
+                except ImportError:
+                    # Fallback if psutil is not available
+                    if avg_review_length < 100:
+                        batch_size = 300  # Very short reviews
+                    elif avg_review_length < 200:
+                        batch_size = 200  # Short reviews
+                    elif avg_review_length < 500:
+                        batch_size = 150  # Medium reviews
+                    else:
+                        batch_size = 100  # Long reviews
+
+                    logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
 
                 # Split reviews into optimized batches
                 batches = [reviews[i:i+batch_size] for i in range(0, len(reviews), batch_size)]
@@ -821,78 +896,84 @@ class GeminiService:
                 all_positive_aspects = []
                 batch_summaries = []
 
-                # Check circuit breaker state and rate limit status once before processing
-                circuit_open = self._check_circuit_breaker()
-                rate_limited = self.rate_limited and time.time() < self.rate_limit_reset_time
+                # Define a function to process a single batch
+                def process_batch(batch_index, batch):
+                    batch_start_time = time.time()
+                    logger.info(f"Processing batch {batch_index+1}/{len(batches)} with {len(batch)} reviews")
 
-                # If circuit is open or rate limited, return fallback insights immediately
-                if circuit_open or rate_limited:
-                    if circuit_open:
-                        logger.info(f"Circuit breaker open. Using fallback insights for all {len(reviews)} reviews at once")
-                        return {
-                            "summary": "Using local processing due to API reliability issues",
-                            "key_points": ["Circuit breaker active - temporarily using local processing"],
-                            "pain_points": ["API reliability issues detected"],
-                            "feature_requests": ["Will automatically retry Gemini API later"],
-                            "positive_aspects": ["Basic analysis still available during API issues"]
-                        }
-                    else:
-                        logger.info(f"Rate limited. Using fallback insights for all {len(reviews)} reviews at once")
-                        return {
-                            "summary": "Rate limit exceeded. Using local processing temporarily.",
-                            "key_points": ["Rate limit active - temporarily using local processing"],
-                            "pain_points": ["API rate limits reached"],
-                            "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                            "positive_aspects": ["Basic analysis still available during rate limiting"]
-                        }
-
-                # Process each batch normally if circuit is closed and not rate limited
-                for i, batch in enumerate(batches):
-                    logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
-
-                    # Check if circuit breaker is open before processing this batch (in case it opened during processing)
+                    # Check circuit breaker and rate limit status before processing this batch
                     if self._check_circuit_breaker():
-                        logger.info(f"Circuit breaker open. Using fallback for batch {i+1}/{len(batches)}")
-                        batch_result = {
+                        logger.info(f"Circuit breaker open. Using fallback for batch {batch_index+1}/{len(batches)}")
+                        return {
                             "summary": "Using local processing due to API reliability issues",
                             "key_points": ["Circuit breaker active - temporarily using local processing"],
                             "pain_points": ["API reliability issues detected"],
                             "feature_requests": ["Will automatically retry Gemini API later"],
                             "positive_aspects": ["Basic analysis still available during API issues"]
                         }
-                    # Check if we're currently rate limited
                     elif self.rate_limited and time.time() < self.rate_limit_reset_time:
-                        logger.info(f"Rate limited. Using fallback for batch {i+1}/{len(batches)}")
-                        batch_result = {
+                        logger.info(f"Rate limited. Using fallback for batch {batch_index+1}/{len(batches)}")
+                        return {
                             "summary": "Rate limit exceeded. Using local processing temporarily.",
                             "key_points": ["Rate limit active - temporarily using local processing"],
                             "pain_points": ["API rate limits reached"],
                             "feature_requests": ["Will automatically retry Gemini API when limits reset"],
                             "positive_aspects": ["Basic analysis still available during rate limiting"]
                         }
-                    else:
-                        # Process this batch with Gemini API
-                        batch_result = self._extract_insights_single_batch(batch)
 
-                    # Collect results
+                    # Process this batch with Gemini API
+                    batch_result = self._extract_insights_single_batch(batch)
+
+                    batch_time = time.time() - batch_start_time
+                    logger.info(f"Batch {batch_index+1}/{len(batches)} completed in {batch_time:.2f}s")
+
+                    return batch_result
+
+                # Process batches with improved error handling
+                batch_results = []
+                for i, batch in enumerate(batches):
+                    try:
+                        # Process each batch sequentially for better rate limit management
+                        batch_result = process_batch(i, batch)
+                        batch_results.append(batch_result)
+
+                        # Add a small adaptive delay between batches to avoid rate limiting
+                        # Adjust delay based on batch size
+                        if i < len(batches) - 1 and not self._check_circuit_breaker() and not self.rate_limited:
+                            delay = min(2.0, max(0.5, len(batch) / 200))  # 0.5-2.0 seconds based on batch size
+                            time.sleep(delay)
+                    except Exception as batch_error:
+                        logger.error(f"Error processing batch {i+1}: {str(batch_error)}")
+                        # Use fallback for this batch
+                        batch_results.append({
+                            "summary": f"Error processing batch: {str(batch_error)}",
+                            "key_points": ["Error occurred during batch processing"],
+                            "pain_points": ["API processing error encountered"],
+                            "feature_requests": ["System will automatically retry later"],
+                            "positive_aspects": ["Basic analysis still available"]
+                        })
+
+                # Collect results from all batches
+                for batch_result in batch_results:
                     batch_summaries.append(batch_result.get("summary", ""))
                     all_key_points.extend(batch_result.get("key_points", []))
                     all_pain_points.extend(batch_result.get("pain_points", []))
                     all_feature_requests.extend(batch_result.get("feature_requests", []))
                     all_positive_aspects.extend(batch_result.get("positive_aspects", []))
 
-                    # Add a small delay between batches to avoid rate limiting
-                    if i < len(batches) - 1 and not self._check_circuit_breaker() and not self.rate_limited:
-                        time.sleep(1)
-
                 # Generate a combined summary
                 combined_summary = self._generate_combined_summary(batch_summaries)
 
-                # Remove duplicates
-                all_key_points = list(set(all_key_points))
-                all_pain_points = list(set(all_pain_points))
-                all_feature_requests = list(set(all_feature_requests))
-                all_positive_aspects = list(set(all_positive_aspects))
+                # Remove duplicates more efficiently
+                # Use a dictionary to preserve order while removing duplicates
+                def deduplicate(items):
+                    seen = set()
+                    return [x for x in items if not (x in seen or seen.add(x))]
+
+                all_key_points = deduplicate(all_key_points)
+                all_pain_points = deduplicate(all_pain_points)
+                all_feature_requests = deduplicate(all_feature_requests)
+                all_positive_aspects = deduplicate(all_positive_aspects)
 
                 # Log the array lengths after deduplication
                 logger.info(f"After deduplication - key_points: {len(all_key_points)}, " +
@@ -907,58 +988,116 @@ class GeminiService:
                     if combined_summary:
                         all_key_points = ["No specific key points identified. Please review the summary."]
 
-                        # Try to extract some insights from the summary
-                        if "issue" in combined_summary.lower() or "problem" in combined_summary.lower():
+                        # Try to extract some insights from the summary more efficiently
+                        summary_lower = combined_summary.lower()
+
+                        # Check for pain points
+                        if any(term in summary_lower for term in ["issue", "problem", "bug", "error", "crash", "fail"]):
                             all_pain_points = ["Issues mentioned in summary: " + combined_summary[:100]]
 
-                        if "request" in combined_summary.lower() or "would like" in combined_summary.lower():
+                        # Check for feature requests
+                        if any(term in summary_lower for term in ["request", "would like", "need", "want", "should", "could", "add", "improve"]):
                             all_feature_requests = ["Potential requests mentioned in summary: " + combined_summary[:100]]
 
-                        if "good" in combined_summary.lower() or "great" in combined_summary.lower() or "like" in combined_summary.lower():
+                        # Check for positive aspects
+                        if any(term in summary_lower for term in ["good", "great", "excellent", "like", "love", "enjoy", "positive", "well"]):
                             all_positive_aspects = ["Positive aspects mentioned in summary: " + combined_summary[:100]]
 
+                # Ensure we have at least one item in each category
+                if not all_key_points:
+                    all_key_points = ["No key points identified"]
+
+                if not all_pain_points:
+                    all_pain_points = ["No specific pain points identified"]
+
+                if not all_feature_requests:
+                    all_feature_requests = ["No specific feature requests identified"]
+
+                if not all_positive_aspects:
+                    all_positive_aspects = ["No specific positive aspects identified"]
+
+                # Create the result dictionary with optimized data
                 result = {
                     "summary": combined_summary if combined_summary else "No summary available",
-                    "key_points": all_key_points[:10] if all_key_points else ["No key points identified"],  # Limit to top 10
-                    "pain_points": all_pain_points[:10] if all_pain_points else ["No specific pain points identified"],
-                    "feature_requests": all_feature_requests[:10] if all_feature_requests else ["No specific feature requests identified"],
-                    "positive_aspects": all_positive_aspects[:10] if all_positive_aspects else ["No specific positive aspects identified"]
+                    "key_points": all_key_points[:10],  # Limit to top 10
+                    "pain_points": all_pain_points[:10],
+                    "feature_requests": all_feature_requests[:10],
+                    "positive_aspects": all_positive_aspects[:10]
                 }
 
                 processing_time = time.time() - start_time
                 logger.info(f"Gemini batch insight extraction completed in {processing_time:.2f} seconds for {len(reviews)} reviews")
 
+                # Cache the result for future use
+                import hashlib
+                reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+                cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+                self._add_to_cache(cache_key, result, "insight")
+
                 return result
             else:
-                # Check if circuit breaker is open before processing
+                # For smaller batches, process all reviews in a single batch
+                logger.info(f"Processing small batch of {len(reviews)} reviews at once")
+
+                # Check circuit breaker and rate limit status before processing
                 if self._check_circuit_breaker():
                     logger.info(f"Circuit breaker open. Using fallback for single batch with {len(reviews)} reviews")
-                    return {
+                    fallback_result = {
                         "summary": "Using local processing due to API reliability issues",
                         "key_points": ["Circuit breaker active - temporarily using local processing"],
                         "pain_points": ["API reliability issues detected"],
                         "feature_requests": ["Will automatically retry Gemini API later"],
                         "positive_aspects": ["Basic analysis still available during API issues"]
                     }
+                    # Cache the fallback result
+                    import hashlib
+                    reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+                    cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+                    self._add_to_cache(cache_key, fallback_result, "insight")
+                    return fallback_result
+
                 # Check if we're currently rate limited
                 elif self.rate_limited and time.time() < self.rate_limit_reset_time:
                     logger.info(f"Rate limited. Using fallback for single batch with {len(reviews)} reviews")
-                    return {
+                    fallback_result = {
                         "summary": "Rate limit exceeded. Using local processing temporarily.",
                         "key_points": ["Rate limit active - temporarily using local processing"],
                         "pain_points": ["API rate limits reached"],
                         "feature_requests": ["Will automatically retry Gemini API when limits reset"],
                         "positive_aspects": ["Basic analysis still available during rate limiting"]
                     }
+                    # Cache the fallback result
+                    import hashlib
+                    reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+                    cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+                    self._add_to_cache(cache_key, fallback_result, "insight")
+                    return fallback_result
                 else:
                     # Process all reviews in a single batch with Gemini API
-                    return self._extract_insights_single_batch(reviews)
+                    result = self._extract_insights_single_batch(reviews)
+
+                    # Cache the result for future use
+                    import hashlib
+                    reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+                    cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+                    self._add_to_cache(cache_key, result, "insight")
+
+                    return result
 
         except Exception as e:
             logger.error(f"Error in Gemini insight extraction: {str(e)}")
 
+            # Log detailed error information for debugging
+            import traceback
+            logger.error(f"Detailed error in insight extraction: {traceback.format_exc()}")
+
+            # Create a cache key for the error result
+            import hashlib
+            reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
+            cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
+
             # Check if this is a rate limit error
-            if "429" in str(e) or "quota" in str(e).lower():
+            if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
                 self.consecutive_failures += 1
                 wait_time = min(300, self.initial_wait_time * (self.backoff_factor ** (self.consecutive_failures - 1)))
 
@@ -972,13 +1111,20 @@ class GeminiService:
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
 
-                return {
+                fallback_result = {
                     "summary": "Rate limit exceeded. Using local processing temporarily.",
                     "key_points": ["Rate limit active - temporarily using local processing"],
                     "pain_points": ["API rate limits reached"],
                     "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                    "positive_aspects": ["Basic analysis still available during rate limiting"]
+                    "positive_aspects": ["Basic analysis still available during rate limiting"],
+                    "error": str(e),
+                    "error_type": "rate_limit"
                 }
+
+                # Cache the fallback result with a shorter expiration time
+                self._add_to_cache(cache_key, fallback_result, "insight", expiration=wait_time)
+
+                return fallback_result
             else:
                 # For non-rate-limit errors, still increment failure counter but with less weight
                 self.consecutive_failures += 0.5
@@ -987,13 +1133,20 @@ class GeminiService:
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
 
-                return {
+                fallback_result = {
                     "summary": f"Error extracting insights: {str(e)}",
                     "key_points": ["Error occurred during API processing"],
                     "pain_points": ["API processing error encountered"],
                     "feature_requests": ["System will automatically retry later"],
-                    "positive_aspects": ["Basic analysis still available"]
+                    "positive_aspects": ["Basic analysis still available"],
+                    "error": str(e),
+                    "error_type": "general"
                 }
+
+                # Cache the fallback result with a shorter expiration time (5 minutes)
+                self._add_to_cache(cache_key, fallback_result, "insight", expiration=300)
+
+                return fallback_result
 
     def _extract_insights_single_batch(self, reviews: List[str]) -> Dict[str, Any]:
         """

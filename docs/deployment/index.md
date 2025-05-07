@@ -6,7 +6,8 @@ This guide provides instructions for deploying the Product Review Analyzer in va
 
 - [Local Development](#local-development): For development and testing
 - [Docker Deployment](#docker-deployment): For containerized deployment
-- [Railway Deployment](#railway-deployment): For cloud deployment
+- [AWS Deployment](aws.md): For production deployment on Amazon Web Services
+- [Railway Deployment](#railway-deployment): For alternative cloud deployment
 
 ## Prerequisites
 
@@ -165,8 +166,24 @@ After deploying the application, verify that:
 
 For high-traffic deployments, consider:
 
-1. **Horizontal Scaling**: Deploy multiple backend instances behind a load balancer
-2. **Database Scaling**: Use MongoDB Atlas scaling options
-3. **Caching**: Implement Redis for caching frequently accessed data
-4. **CDN**: Use a CDN for static frontend assets
-5. **Rate Limiting**: Implement rate limiting for API endpoints
+1. **Horizontal Scaling**:
+   - Deploy multiple backend instances behind a load balancer
+   - On AWS, use Elastic Load Balancer (ELB) with Auto Scaling Groups
+
+2. **Database Scaling**:
+   - Use MongoDB Atlas scaling options
+   - Consider upgrading your MongoDB Atlas tier for higher performance
+
+3. **Caching**:
+   - Implement Redis for caching frequently accessed data
+   - On AWS, consider using ElastiCache for Redis
+
+4. **CDN**:
+   - Use a CDN for static frontend assets
+   - On AWS, use CloudFront for global content delivery
+
+5. **Rate Limiting**:
+   - Implement rate limiting for API endpoints
+   - Consider using AWS API Gateway for managed API services
+
+For AWS-specific scaling strategies, refer to the [AWS Deployment Guide](aws.md).

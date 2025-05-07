@@ -99,6 +99,18 @@ npm run install:all
 npm run dev
 ```
 
+### AWS Deployment
+
+For production deployment on AWS:
+
+1. Configure your AWS credentials and EC2 instance
+2. Run the deployment script:
+```bash
+./deploy_aws.sh -h <EC2_HOST> -k <PEM_FILE>
+```
+
+For detailed AWS deployment instructions, see the [AWS Deployment Guide](docs/deployment/aws.md).
+
 ### Manual Setup
 
 #### Backend Setup

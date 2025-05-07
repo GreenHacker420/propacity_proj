@@ -462,7 +462,33 @@ class TextAnalyzer:
             try:
                 return obj[attr]  # Try dictionary access
             except (TypeError, KeyError):
-                return getattr(obj, attr)  # Fall back to attribute access
+                try:
+                    return getattr(obj, attr)  # Fall back to attribute access
+                except (AttributeError, TypeError):
+                    return None  # Return None if attribute doesn't exist
+
+        # Validate input
+        if not reviews:
+            logger.warning("No reviews provided for summary generation")
+            return {
+                "pain_points": [{
+                    "text": "No reviews provided for analysis",
+                    "sentiment_score": 0.5,
+                    "keywords": []
+                }],
+                "feature_requests": [{
+                    "text": "No reviews provided for analysis",
+                    "sentiment_score": 0.5,
+                    "keywords": []
+                }],
+                "positive_feedback": [{
+                    "text": "No reviews provided for analysis",
+                    "sentiment_score": 0.5,
+                    "keywords": []
+                }],
+                "suggested_priorities": ["Collect more user feedback for analysis"],
+                "gemini_powered": False
+            }
 
         # Check if Gemini API is available
         gemini_available = (self.gemini_service and
@@ -486,8 +512,12 @@ class TextAnalyzer:
                 start_time = time.time()
                 logger.info("Using Gemini API for insights extraction")
 
-                # Extract review texts
-                review_texts = [get_attr(review, "text") for review in reviews if get_attr(review, "text")]
+                # Extract review texts - with improved error handling
+                review_texts = []
+                for review in reviews:
+                    text = get_attr(review, "text")
+                    if text and isinstance(text, str) and text.strip():
+                        review_texts.append(text)
 
                 if not review_texts:
                     logger.warning("No valid review texts found for Gemini insights extraction")
@@ -528,9 +558,11 @@ class TextAnalyzer:
             elif circuit_open:
                 logger.info("Circuit breaker is open. Using traditional summary generation")
                 traditional_summary["note"] = "Using local processing due to circuit breaker"
+                traditional_summary["circuit_open"] = True
             elif rate_limited:
                 logger.info("Rate limited. Using traditional summary generation")
                 traditional_summary["note"] = "Using local processing due to rate limiting"
+                traditional_summary["rate_limited"] = True
 
             return traditional_summary
 
@@ -561,10 +593,13 @@ class TextAnalyzer:
             if not point or not isinstance(point, str):
                 continue
 
+            # Extract keywords from the point
+            keywords = self.extract_keywords(point) if point else []
+
             pain_points.append({
                 "text": point,
                 "sentiment_score": 0.2,  # Low score for pain points
-                "keywords": []
+                "keywords": keywords
             })
             if i == 0 and "no specific" not in point.lower():
                 priorities.append(f"Address critical issue: {point[:100]}...")
@@ -580,10 +615,13 @@ class TextAnalyzer:
             if not request or not isinstance(request, str):
                 continue
 
+            # Extract keywords from the request
+            keywords = self.extract_keywords(request) if request else []
+
             feature_requests.append({
                 "text": request,
                 "sentiment_score": 0.7,  # Higher score for feature requests
-                "keywords": []
+                "keywords": keywords
             })
             if i == 0 and "no specific" not in request.lower():
                 priorities.append(f"Implement requested feature: {request[:100]}...")
@@ -599,10 +637,13 @@ class TextAnalyzer:
             if not positive or not isinstance(positive, str):
                 continue
 
+            # Extract keywords from the positive aspect
+            keywords = self.extract_keywords(positive) if positive else []
+
             positive_feedback.append({
                 "text": positive,
                 "sentiment_score": 0.9,  # High score for positive feedback
-                "keywords": []
+                "keywords": keywords
             })
             if i == 0 and "no specific" not in positive.lower():
                 priorities.append(f"Maintain strengths: {positive[:100]}...")
@@ -642,7 +683,8 @@ class TextAnalyzer:
                    f"Positive feedback: {len(positive_feedback)}, " +
                    f"Priorities: {len(priorities)}")
 
-        return {
+        # Create the summary response
+        summary_response = {
             "pain_points": pain_points[:3],
             "feature_requests": feature_requests[:3],
             "positive_feedback": positive_feedback[:3],
@@ -650,6 +692,12 @@ class TextAnalyzer:
             "gemini_powered": True,
             "processing_time": processing_time
         }
+
+        # Add additional metadata for frontend
+        summary_response["reviews"] = reviews
+        summary_response["source_type"] = "analysis"
+
+        return summary_response
 
     def _traditional_summary(self, reviews: List[Any]) -> Dict:
         """
@@ -661,61 +709,90 @@ class TextAnalyzer:
         Returns:
             Dictionary with summary information
         """
-        # Helper function to get attribute from either dict or object
-        def get_attr(obj, attr):
+        # Helper function to get attribute from either dict or object with improved error handling
+        def get_attr(obj, attr, default=None):
             try:
                 return obj[attr]  # Try dictionary access
             except (TypeError, KeyError):
-                return getattr(obj, attr)  # Fall back to attribute access
+                try:
+                    return getattr(obj, attr)  # Fall back to attribute access
+                except (AttributeError, TypeError):
+                    return default  # Return default if attribute doesn't exist
 
         # Group reviews by category
         pain_points = []
         feature_requests = []
         positive_feedback = []
 
-        for review in reviews:
-            # Handle both dictionary and Pydantic model access
-            try:
-                # Try dictionary-style access first
-                category = review["category"]
-            except (TypeError, KeyError):
-                # Fall back to attribute access for Pydantic models
-                category = review.category
+        # Track review count for performance metrics
+        review_count = 0
 
-            if category == "pain_point":
-                pain_points.append(review)
-            elif category == "feature_request":
-                feature_requests.append(review)
-            else:
-                positive_feedback.append(review)
+        # Process reviews in batches for better performance
+        batch_size = 100
+        for i in range(0, len(reviews), batch_size):
+            batch = reviews[i:i+batch_size]
+
+            for review in batch:
+                review_count += 1
+                # Get category with fallback to positive_feedback
+                category = get_attr(review, "category", "positive_feedback")
+
+                if category == "pain_point":
+                    pain_points.append(review)
+                elif category == "feature_request":
+                    feature_requests.append(review)
+                else:
+                    positive_feedback.append(review)
+
+        logger.info(f"Processed {review_count} reviews for traditional summary")
+        logger.info(f"Category counts - Pain points: {len(pain_points)}, " +
+                   f"Feature requests: {len(feature_requests)}, " +
+                   f"Positive feedback: {len(positive_feedback)}")
 
         # Sort by sentiment score (ascending for pain points, descending for others)
-        pain_points.sort(key=lambda x: get_attr(x, "sentiment_score"))
-        feature_requests.sort(key=lambda x: get_attr(x, "sentiment_score"), reverse=True)
-        positive_feedback.sort(key=lambda x: get_attr(x, "sentiment_score"), reverse=True)
+        # Use a more efficient sorting approach with error handling
+        def safe_sort_key(x, attr, reverse=False):
+            val = get_attr(x, attr, 0.5)  # Default to 0.5 if missing
+            return -val if reverse else val
+
+        # Only sort if we have items (avoid unnecessary computation)
+        if pain_points:
+            pain_points.sort(key=lambda x: safe_sort_key(x, "sentiment_score"))
+        if feature_requests:
+            feature_requests.sort(key=lambda x: safe_sort_key(x, "sentiment_score", reverse=True))
+        if positive_feedback:
+            positive_feedback.sort(key=lambda x: safe_sort_key(x, "sentiment_score", reverse=True))
 
         # Generate suggested priorities
         priorities = []
 
         # Add pain points to priorities (most critical first)
         if pain_points:
-            text = get_attr(pain_points[0], "text")
-            priorities.append(f"Address critical issue: {text[:100]}...")
+            text = get_attr(pain_points[0], "text", "Unknown issue")
+            if text and isinstance(text, str):
+                priorities.append(f"Address critical issue: {text[:100]}...")
 
             # Add more pain points if available
             if len(pain_points) > 1:
-                text = get_attr(pain_points[1], "text")
-                priorities.append(f"Fix secondary issue: {text[:100]}...")
+                text = get_attr(pain_points[1], "text", "Unknown issue")
+                if text and isinstance(text, str):
+                    priorities.append(f"Fix secondary issue: {text[:100]}...")
 
         # Add feature requests to priorities
         if feature_requests:
-            text = get_attr(feature_requests[0], "text")
-            priorities.append(f"Implement requested feature: {text[:100]}...")
+            text = get_attr(feature_requests[0], "text", "Unknown feature request")
+            if text and isinstance(text, str):
+                priorities.append(f"Implement requested feature: {text[:100]}...")
 
         # Add general recommendation
         if positive_feedback:
-            text = get_attr(positive_feedback[0], "text")
-            priorities.append(f"Maintain strengths: {text[:100]}...")
+            text = get_attr(positive_feedback[0], "text", "Unknown positive aspect")
+            if text and isinstance(text, str):
+                priorities.append(f"Maintain strengths: {text[:100]}...")
+
+        # If no priorities were generated, add a default one
+        if not priorities:
+            priorities = ["Collect more specific user feedback for detailed analysis"]
 
         # Get top 3 of each category (or fewer if not available)
         top_pain_points = pain_points[:3]
@@ -723,34 +800,72 @@ class TextAnalyzer:
         top_positive_feedback = positive_feedback[:3]
 
         # Create summary items with required fields
-        pain_point_items = [
-            {
-                "text": get_attr(item, "text"),
-                "sentiment_score": get_attr(item, "sentiment_score"),
-                "keywords": get_attr(item, "keywords")
-            } for item in top_pain_points
-        ]
+        pain_point_items = []
+        for item in top_pain_points:
+            text = get_attr(item, "text", "No specific pain point identified")
+            if text and isinstance(text, str):
+                pain_point_items.append({
+                    "text": text,
+                    "sentiment_score": get_attr(item, "sentiment_score", 0.2),
+                    "keywords": get_attr(item, "keywords", [])
+                })
 
-        feature_request_items = [
-            {
-                "text": get_attr(item, "text"),
-                "sentiment_score": get_attr(item, "sentiment_score"),
-                "keywords": get_attr(item, "keywords")
-            } for item in top_feature_requests
-        ]
+        # Ensure we have at least one pain point
+        if not pain_point_items:
+            pain_point_items = [{
+                "text": "No specific pain points identified in the reviews",
+                "sentiment_score": 0.5,
+                "keywords": []
+            }]
 
-        positive_feedback_items = [
-            {
-                "text": get_attr(item, "text"),
-                "sentiment_score": get_attr(item, "sentiment_score"),
-                "keywords": get_attr(item, "keywords")
-            } for item in top_positive_feedback
-        ]
+        feature_request_items = []
+        for item in top_feature_requests:
+            text = get_attr(item, "text", "No specific feature request identified")
+            if text and isinstance(text, str):
+                feature_request_items.append({
+                    "text": text,
+                    "sentiment_score": get_attr(item, "sentiment_score", 0.7),
+                    "keywords": get_attr(item, "keywords", [])
+                })
 
-        return {
+        # Ensure we have at least one feature request
+        if not feature_request_items:
+            feature_request_items = [{
+                "text": "No specific feature requests identified in the reviews",
+                "sentiment_score": 0.5,
+                "keywords": []
+            }]
+
+        positive_feedback_items = []
+        for item in top_positive_feedback:
+            text = get_attr(item, "text", "No specific positive feedback identified")
+            if text and isinstance(text, str):
+                positive_feedback_items.append({
+                    "text": text,
+                    "sentiment_score": get_attr(item, "sentiment_score", 0.9),
+                    "keywords": get_attr(item, "keywords", [])
+                })
+
+        # Ensure we have at least one positive feedback
+        if not positive_feedback_items:
+            positive_feedback_items = [{
+                "text": "No specific positive feedback identified in the reviews",
+                "sentiment_score": 0.5,
+                "keywords": []
+            }]
+
+        # Create the summary response
+        summary_response = {
             "pain_points": pain_point_items,
             "feature_requests": feature_request_items,
             "positive_feedback": positive_feedback_items,
             "suggested_priorities": priorities,
             "gemini_powered": False
         }
+
+        # Add additional metadata for frontend
+        summary_response["reviews"] = reviews
+        summary_response["source_type"] = "analysis"
+        summary_response["total_reviews"] = review_count
+
+        return summary_response
