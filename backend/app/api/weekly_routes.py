@@ -98,10 +98,27 @@ async def get_priority_insights(
     try:
         # Try to get real insights first
         try:
+            # If source_type is 'csv', generate a new summary first
+            if source_type == 'csv':
+                # Generate a new summary for CSV data
+                logger.info("Generating new summary for CSV data")
+                end_date = datetime.now(timezone.utc)
+                start_date = end_date - timedelta(days=7)
+
+                # Generate the summary
+                await weekly_service.generate_summary(
+                    source_type='csv',
+                    source_name='csv',
+                    start_date=start_date,
+                    end_date=end_date
+                )
+
+            # Now get the insights
             insights = await weekly_service.get_priority_insights(
                 source_type=source_type,
                 user_id=current_user.get("id") if current_user else None
             )
+
             # Convert the Pydantic model to a dictionary
             if isinstance(insights, list):
                 # Handle list of insights
@@ -213,14 +230,34 @@ async def generate_weekly_summary(
             end_date=end_date
         )
 
-        insights_data = {
-            "high_priority_items": [],
-            "trending_topics": [],
-            "sentiment_trends": {},
-            "action_items": [],
-            "risk_areas": [],
-            "opportunity_areas": []
-        }
+        # Get insights from the summary
+        try:
+            # Get insights directly from the summary
+            insights = await weekly_service.get_priority_insights(
+                source_type=source_type,
+                user_id=current_user.get("id") if current_user else None
+            )
+
+            # Convert insights to dictionary
+            if hasattr(insights, 'model_dump'):
+                insights_data = insights.model_dump()
+            elif hasattr(insights, 'dict'):
+                # For backward compatibility with older Pydantic versions
+                insights_data = insights.dict()
+            else:
+                insights_data = insights
+        except Exception as insights_error:
+            logger.warning(f"Error getting insights from summary: {str(insights_error)}")
+            # Use empty insights if there was an error
+            insights_data = {
+                "high_priority_items": [],
+                "trending_topics": [],
+                "sentiment_trends": {},
+                "action_items": [],
+                "risk_areas": [],
+                "opportunity_areas": []
+            }
+
         logger.info(f"Summary type: {type(summary)}, fields: {dir(summary)}")
         return {
             "status": "success",
