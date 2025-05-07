@@ -35,7 +35,7 @@ RUN cd frontend && \
     npm run build || echo "Frontend build failed, but continuing with deployment"
 
 # Expose the port
-EXPOSE $PORT
+EXPOSE 8000
 
 # Make start.sh executable
 RUN chmod +x start.sh

@@ -33,17 +33,11 @@ const WeeklySummaryView = ({ sourceType = null }) => {
     const fetchInsights = async () => {
       try {
         setLoading(true);
-        try {
-          const data = await api.getPriorityInsights(sourceType);
-          setInsights(data);
-        } catch (apiError) {
-          console.error('API error, using mock data:', apiError);
-          // Use mock data if API fails
-          setInsights(getMockInsights());
-        }
+        const data = await api.getPriorityInsights(sourceType);
+        setInsights(data);
       } catch (err) {
         console.error('Error fetching priority insights:', err);
-        setError('Failed to load weekly summary data');
+        setError('Failed to load weekly summary data. Please try analyzing some data first.');
       } finally {
         setLoading(false);
       }
@@ -52,78 +46,7 @@ const WeeklySummaryView = ({ sourceType = null }) => {
     fetchInsights();
   }, [sourceType]);
 
-  // Mock data function for development and testing
-  const getMockInsights = () => {
-    return {
-      high_priority_items: [
-        {
-          title: "App crashes during checkout",
-          description: "Multiple users reported app crashes during the payment process",
-          priority_score: 0.95,
-          category: "pain_point",
-          sentiment_score: -0.8,
-          frequency: 12,
-          examples: ["App crashed when I tried to pay", "Payment screen freezes every time"]
-        },
-        {
-          title: "Slow loading times on product pages",
-          description: "Users complain about slow loading times when browsing products",
-          priority_score: 0.85,
-          category: "pain_point",
-          sentiment_score: -0.7,
-          frequency: 8,
-          examples: ["Pages take forever to load", "Product images load very slowly"]
-        },
-        {
-          title: "Add dark mode support",
-          description: "Users requesting dark mode for better nighttime usage",
-          priority_score: 0.75,
-          category: "feature_request",
-          sentiment_score: 0.2,
-          frequency: 15,
-          examples: ["Please add dark mode", "App is too bright at night"]
-        },
-        {
-          title: "Improve search functionality",
-          description: "Search results are not relevant enough",
-          priority_score: 0.7,
-          category: "feature_request",
-          sentiment_score: -0.3,
-          frequency: 10,
-          examples: ["Search doesn't find what I'm looking for", "Search results are irrelevant"]
-        }
-      ],
-      trending_topics: [
-        { topic: "checkout", count: 25 },
-        { topic: "dark mode", count: 18 },
-        { topic: "search", count: 15 },
-        { topic: "performance", count: 12 },
-        { topic: "UI", count: 10 }
-      ],
-      sentiment_trends: {
-        "Twitter": 0.65,
-        "App Store": 0.45,
-        "Play Store": 0.55,
-        "Website": 0.7
-      },
-      action_items: [
-        "Fix checkout process crashes as highest priority",
-        "Optimize product page loading times",
-        "Implement dark mode in next release",
-        "Improve search algorithm relevance"
-      ],
-      risk_areas: [
-        "Payment processing reliability issues may impact revenue",
-        "Performance problems could lead to user abandonment",
-        "Search functionality limitations affecting product discovery"
-      ],
-      opportunity_areas: [
-        "Dark mode implementation could improve user satisfaction",
-        "Improved search could increase conversion rates",
-        "Performance optimizations would enhance overall experience"
-      ]
-    };
-  };
+  // Mock data function removed
 
   if (loading) {
     return (

@@ -174,10 +174,7 @@ if AUTH_AVAILABLE:
 else:
     logger.warning("Authentication routes are not available")
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+# Health check endpoint removed for production
 
 @app.get("/")
 async def root():
@@ -217,4 +214,4 @@ async def root():
         "version": "1.0.0",
         "features": features,
         "status": "Some features may be limited based on installed packages"
-    } 
+    }

@@ -49,9 +49,9 @@ class WeeklySummaryService:
         logger.info(f"Found {len(reviews)} reviews for query: {query}")
 
         if not reviews:
-            # Generate mock data for testing if no reviews found
-            logger.warning("No reviews found for the specified date range. Generating mock data.")
-            reviews = self._generate_mock_reviews(source_type, 10)
+            # Return empty summary instead of generating mock data
+            logger.warning("No reviews found for the specified date range.")
+            raise ValueError(f"No reviews found for source_type={source_type}, source_name={source_name} in the specified date range.")
 
         # Analyze sentiment and classify feedback
         pain_points = []
@@ -510,52 +510,4 @@ class WeeklySummaryService:
             logger.error(f"Error getting summaries: {str(e)}")
             raise
 
-    def _generate_mock_reviews(self, source_type: str, count: int = 10) -> List[Dict[str, Any]]:
-        """Generate mock reviews for testing when no real reviews are available"""
-        logger.info(f"Generating {count} mock reviews for source_type: {source_type}")
-
-        mock_texts = [
-            "I love this app! It's so intuitive and easy to use.",
-            "The app keeps crashing whenever I try to upload photos. Please fix this!",
-            "Would love to have dark mode in the next update!",
-            "Login with Google fails randomly. Very frustrating.",
-            "Please add offline mode for travel. It would be so useful.",
-            "Best app ever - beautiful UI and fast loading times.",
-            "The search function is too slow. Takes forever to find anything.",
-            "Can you add more customization options? Would make it perfect!",
-            "Notifications are not working properly on my device.",
-            "Love the new update! Much faster now.",
-            "This app is a game changer for my productivity.",
-            "The UI is confusing and hard to navigate.",
-            "Wish there was a way to organize items into folders.",
-            "App crashes every time I try to save my progress.",
-            "Great customer support! They resolved my issue quickly."
-        ]
-
-        mock_reviews = []
-        for i in range(min(count, len(mock_texts))):
-            # Create a mock review with all required fields
-            sentiment_score = random.uniform(-0.9, 0.9)  # Allow negative sentiment scores
-
-            # Determine feedback type based on sentiment
-            if sentiment_score < -0.3:
-                feedback_type = "pain_point"
-            elif sentiment_score < 0.3:
-                feedback_type = "feature_request"
-            else:
-                feedback_type = "positive_feedback"
-
-            mock_review = {
-                "text": mock_texts[i],
-                "source_type": source_type,
-                "source_name": source_type,
-                "created_at": datetime.now(timezone.utc) - timedelta(days=random.randint(0, 6)),
-                "sentiment_score": sentiment_score,
-                "sentiment_label": "POSITIVE" if sentiment_score > 0 else "NEGATIVE",
-                "category": feedback_type,
-                "feedback_type": feedback_type,
-                "keywords": ["app", "feature", "update"]
-            }
-            mock_reviews.append(mock_review)
-
-        return mock_reviews
+    # Mock data generation removed

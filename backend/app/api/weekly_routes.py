@@ -98,20 +98,11 @@ async def get_priority_insights(
     try:
         # Try to get real insights first
         try:
-            # If source_type is 'csv', generate a new summary first
+            # If source_type is 'csv', try to get insights from existing data
             if source_type == 'csv':
-                # Generate a new summary for CSV data
-                logger.info("Generating new summary for CSV data")
-                end_date = datetime.now(timezone.utc)
-                start_date = end_date - timedelta(days=7)
-
-                # Generate the summary
-                await weekly_service.generate_summary(
-                    source_type='csv',
-                    source_name='csv',
-                    start_date=start_date,
-                    end_date=end_date
-                )
+                logger.info("Getting insights for CSV data")
+                # We'll use the existing data in the database
+                # No need to generate a new summary as we'll use the actual analyzed data
 
             # Now get the insights
             insights = await weekly_service.get_priority_insights(
@@ -132,79 +123,28 @@ async def get_priority_insights(
             else:
                 return insights
         except Exception as e:
-            logger.warning(f"Error getting real insights, using mock data: {str(e)}")
+            logger.warning(f"Error getting insights, returning empty data: {str(e)}")
 
-            # Return mock data if real data fails
-            mock_insights = {
+            # Return empty data with a clear message instead of mock data
+            empty_insights = {
                 "high_priority_items": [
                     {
-                        "title": "App crashes during checkout",
-                        "description": "Multiple users reported app crashes during the payment process",
-                        "priority_score": 0.95,
-                        "category": "pain_point",
-                        "sentiment_score": -0.8,
-                        "frequency": 12,
-                        "examples": ["App crashed when I tried to pay", "Payment screen freezes every time"]
-                    },
-                    {
-                        "title": "Slow loading times on product pages",
-                        "description": "Users complain about slow loading times when browsing products",
-                        "priority_score": 0.85,
-                        "category": "pain_point",
-                        "sentiment_score": -0.7,
-                        "frequency": 8,
-                        "examples": ["Pages take forever to load", "Product images load very slowly"]
-                    },
-                    {
-                        "title": "Add dark mode support",
-                        "description": "Users requesting dark mode for better nighttime usage",
-                        "priority_score": 0.75,
+                        "title": "No data available",
+                        "description": "Please analyze some reviews first to see insights here",
+                        "priority_score": 0.5,
                         "category": "feature_request",
-                        "sentiment_score": 0.2,
-                        "frequency": 15,
-                        "examples": ["Please add dark mode", "App is too bright at night"]
-                    },
-                    {
-                        "title": "Improve search functionality",
-                        "description": "Search results are not relevant enough",
-                        "priority_score": 0.7,
-                        "category": "feature_request",
-                        "sentiment_score": -0.3,
-                        "frequency": 10,
-                        "examples": ["Search doesn't find what I'm looking for", "Search results are irrelevant"]
+                        "sentiment_score": 0.0,
+                        "frequency": 1,
+                        "examples": ["No data available"]
                     }
                 ],
-                "trending_topics": [
-                    { "topic": "checkout", "count": 25 },
-                    { "topic": "dark mode", "count": 18 },
-                    { "topic": "search", "count": 15 },
-                    { "topic": "performance", "count": 12 },
-                    { "topic": "UI", "count": 10 }
-                ],
-                "sentiment_trends": {
-                    "Twitter": 0.65,
-                    "App Store": 0.45,
-                    "Play Store": 0.55,
-                    "Website": 0.7
-                },
-                "action_items": [
-                    "Fix checkout process crashes as highest priority",
-                    "Optimize product page loading times",
-                    "Implement dark mode in next release",
-                    "Improve search algorithm relevance"
-                ],
-                "risk_areas": [
-                    "Payment processing reliability issues may impact revenue",
-                    "Performance problems could lead to user abandonment",
-                    "Search functionality limitations affecting product discovery"
-                ],
-                "opportunity_areas": [
-                    "Dark mode implementation could improve user satisfaction",
-                    "Improved search could increase conversion rates",
-                    "Performance optimizations would enhance overall experience"
-                ]
+                "trending_topics": [],
+                "sentiment_trends": {},
+                "action_items": ["Upload and analyze data to see insights"],
+                "risk_areas": ["No data available for analysis"],
+                "opportunity_areas": ["Try analyzing some reviews to get started"]
             }
-            return mock_insights
+            return empty_insights
     except Exception as e:
         logger.error(f"Error getting priority insights: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

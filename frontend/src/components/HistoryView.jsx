@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ClockIcon, DocumentTextIcon, ChartPieIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, DocumentTextIcon, ChartPieIcon, TrashIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import api from '../services/api';
 import LoadingIndicator from './LoadingIndicator';
 import ConfirmationDialog from './ConfirmationDialog';
+import SummaryView from './SummaryView';
 
 /**
  * Component for displaying analysis history
@@ -14,6 +15,8 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
   const [error, setError] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [selectedSummary, setSelectedSummary] = useState(null);
 
   // Fetch history data on component mount
   useEffect(() => {
@@ -63,16 +66,29 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
     try {
       // Call API to delete the analysis
       await api.deleteAnalysis(selectedItemId);
-      
+
       // Update local state to remove the deleted item
       setHistory(history.filter(item => item._id !== selectedItemId));
-      
+
       setShowDeleteConfirm(false);
       setSelectedItemId(null);
     } catch (err) {
       console.error('Error deleting analysis:', err);
       setError('Failed to delete analysis. Please try again later.');
     }
+  };
+
+  // Handle viewing summary
+  const handleViewSummary = (item, e) => {
+    e.stopPropagation(); // Prevent triggering the row click
+    setSelectedSummary(item);
+    setShowSummary(true);
+  };
+
+  // Close summary view
+  const handleCloseSummary = () => {
+    setShowSummary(false);
+    setSelectedSummary(null);
   };
 
   // Get category counts for a history item
@@ -202,8 +218,16 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
+                            onClick={(e) => handleViewSummary(item, e)}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="View Summary"
+                          >
+                            <EyeIcon className="w-5 h-5" />
+                          </button>
+                          <button
                             onClick={(e) => handleDeleteClick(item._id, e)}
                             className="text-red-600 hover:text-red-900"
+                            title="Delete Analysis"
                           >
                             <TrashIcon className="w-5 h-5" />
                           </button>
@@ -228,6 +252,39 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
         confirmText="Delete"
         cancelText="Cancel"
       />
+
+      {/* Summary Modal */}
+      <AnimatePresence>
+        {showSummary && selectedSummary && (
+          <motion.div
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    Summary: {selectedSummary.source_type} ({selectedSummary.source_name})
+                  </h2>
+                  <button
+                    onClick={handleCloseSummary}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <XMarkIcon className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto">
+                  <SummaryView summary={selectedSummary.summary} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
