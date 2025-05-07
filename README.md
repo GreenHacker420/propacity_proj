@@ -20,7 +20,12 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 - **Download PDF reports** with actionable priorities for product managers
 - **Track analysis history** and view past results
 - **Dynamic processing time estimation** based on historical data
-- **Batch processing** with Gemini API for improved performance
+- **Advanced Gemini API integration** with:
+  - Intelligent batch processing for optimal performance
+  - Adaptive request throttling to prevent rate limits
+  - Robust JSON parsing with multiple fallback mechanisms
+  - Multi-level caching system for faster responses
+  - Circuit breaker pattern for graceful degradation
 - **Multi-language support** for analyzing reviews in different languages
 - **MongoDB Atlas integration** for scalable data storage
 
@@ -159,6 +164,7 @@ npm run dev
 - `POST /api/gemini/sentiment` - Analyze sentiment using Google's Gemini API
 - `POST /api/gemini/batch` - Batch process multiple texts with Gemini
 - `POST /api/gemini/insights` - Extract insights from reviews using Gemini
+- `GET /api/gemini/status` - Get detailed Gemini API status with performance metrics
 
 ### History Tracking
 - `POST /api/history` - Record an analysis in the history
@@ -185,13 +191,37 @@ npm run dev
 
 ### Optional Variables
 - `GEMINI_API_KEY` - Google Gemini API key for enhanced analysis
-- `GEMINI_MODEL` - Gemini model to use (default: gemini-1.5-pro)
+- `GEMINI_MODEL` - Gemini model to use (default: gemini-2.0-flash)
 - `PORT` - Server port (default: 8000)
 - `HOST` - Server host (default: 0.0.0.0)
 
 ## API Documentation
 
 Once the backend is running, visit `http://localhost:8000/docs` for the interactive API documentation.
+
+## Gemini API Integration
+
+The application includes advanced integration with Google's Gemini API for enhanced text analysis capabilities. For detailed documentation, see [Gemini API Integration Documentation](docs/gemini_api_integration.md).
+
+### Key Features
+
+- **Intelligent Batch Processing**: Dynamically adjusts batch sizes based on review length
+- **Multi-Level Caching System**: Implements LRU caching for faster responses
+- **Adaptive Request Throttling**: Prevents rate limit errors by controlling request rates
+- **Robust JSON Parsing**: Multiple fallback mechanisms for handling various response formats
+- **Circuit Breaker Pattern**: Gracefully degrades to local processing when API is unavailable
+
+### Performance Monitoring
+
+The Gemini API integration includes comprehensive performance monitoring accessible through the `/api/gemini/status` endpoint, which provides detailed metrics on:
+
+- API response times
+- Cache efficiency
+- Request throttling
+- Error rates
+- Circuit breaker status
+
+For implementation details, troubleshooting tips, and best practices, refer to the [complete documentation](docs/gemini_api_integration.md).
 
 ## CSV Format
 

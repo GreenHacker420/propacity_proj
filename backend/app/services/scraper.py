@@ -70,7 +70,7 @@ class Scraper:
                 tweet_fields=['created_at', 'public_metrics', 'author_id'],
                 max_results=min(100, limit)  # Twitter API limit per request
             ).flatten(limit=limit):
-                
+
                 tweets.append({
                     "text": tweet.text,
                     "username": tweet.author_id,  # We only get author_id in basic access
@@ -127,49 +127,117 @@ class Scraper:
     def extract_app_id(self, url_or_id: str) -> str:
         """
         Extract app ID from a Google Play Store URL or return the ID if it's already in the correct format
-        
+
         Args:
             url_or_id: Either a full Google Play Store URL or an app ID
-            
+
         Returns:
             The extracted app ID
         """
         # If it's already just an app ID, return it
         if not url_or_id.startswith('http'):
             return url_or_id
-            
+
         # Try to extract app ID from URL
         match = re.search(r'id=([^&]+)', url_or_id)
         if match:
             return match.group(1)
-            
+
         raise ValueError("Invalid Google Play Store URL format")
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    def scrape_playstore(self, app_id_or_url: str, limit: int = 50, sort_by: str = 'newest') -> List[Dict]:
+    def scrape_playstore(self, app_id_or_url: str, limit: int = 500, sort_by: str = 'newest') -> List[Dict]:
         """
         Scrape reviews from Google Play Store
-        
+
         Args:
             app_id_or_url: Either a full Google Play Store URL or an app ID
-            limit: Maximum number of reviews to fetch
+            limit: Maximum number of reviews to fetch (default increased to 500)
             sort_by: Sort order ('newest', 'rating', 'helpfulness')
-            
+
         Returns:
             List of review dictionaries
         """
         try:
             # Extract app ID from URL if needed
             app_id = self.extract_app_id(app_id_or_url)
-            logger.info(f"Scraping Play Store reviews for app ID: {app_id}")
-            
-            # Construct the URL
-            url = f"{self.playstore_base_url}?id={app_id}"
-            
-            # TODO: Implement actual Play Store scraping logic here
-            # For now, return mock data
-            return self._get_mock_playstore_data(app_id, limit)
-            
+            logger.info(f"Scraping Play Store reviews for app ID: {app_id}, limit: {limit}")
+
+            # Limit the maximum number of reviews to prevent timeouts
+            max_safe_limit = 200
+            if limit > max_safe_limit:
+                logger.warning(f"Requested limit {limit} exceeds safe limit. Using {max_safe_limit} instead.")
+                limit = max_safe_limit
+
+            # Map sort_by to google_play_scraper Sort enum
+            sort_mapping = {
+                'newest': Sort.NEWEST,
+                'rating': Sort.RATING,
+                'helpfulness': Sort.MOST_RELEVANT,  # closest match to helpfulness
+            }
+            sort_option = sort_mapping.get(sort_by.lower(), Sort.NEWEST)
+
+            # Use google_play_scraper to get reviews
+            start_time = time.time()
+
+            # Use the regular reviews method with pagination for better reliability
+            logger.info(f"Using regular reviews method with pagination for limit: {limit}")
+            result = []
+            continuation_token = None
+            batch_size = 100  # Max batch size for reviews method
+
+            # Keep fetching batches until we reach the limit or run out of reviews
+            while len(result) < limit:
+                try:
+                    logger.info(f"Fetching batch of up to {min(batch_size, limit - len(result))} reviews (total so far: {len(result)})")
+                    batch, continuation_token = reviews(
+                        app_id=app_id,
+                        lang='en',
+                        country='us',
+                        sort=sort_option,
+                        count=min(batch_size, limit - len(result)),
+                        continuation_token=continuation_token
+                    )
+
+                    logger.info(f"Fetched {len(batch)} reviews in this batch")
+                    result.extend(batch)
+
+                    # If no more reviews or we've reached the limit, break
+                    if not continuation_token or len(result) >= limit:
+                        break
+
+                    # Add a small delay to avoid rate limiting
+                    time.sleep(0.5)
+
+                except Exception as e:
+                    logger.error(f"Error fetching batch: {str(e)}")
+                    # If we have some results already, return them
+                    if result:
+                        logger.warning(f"Returning partial results ({len(result)} reviews)")
+                        break
+                    else:
+                        # If we have no results, re-raise to fall back to mock data
+                        raise
+
+            processing_time = time.time() - start_time
+            logger.info(f"Play Store scraping completed in {processing_time:.2f} seconds, fetched {len(result)} reviews")
+
+            # Format the results
+            formatted_reviews = []
+            for review in result:
+                formatted_reviews.append({
+                    "text": review['content'],
+                    "rating": review['score'],
+                    "author": review['userName'],
+                    "date": review['at'],
+                    "app_version": review.get('reviewCreatedVersion', 'Unknown'),
+                    "thumbs_up": review.get('thumbsUpCount', 0),
+                    "reply": review.get('replyContent', None),
+                    "reply_date": review.get('repliedAt', None)
+                })
+
+            return formatted_reviews
+
         except Exception as e:
             logger.error(f"Error scraping Google Play Store: {str(e)}")
             logger.warning("Falling back to mock Play Store data")
@@ -209,12 +277,12 @@ class Scraper:
                 "date": "2024-03-11"
             }
         ]
-        
+
         # Return limited number of reviews
         return mock_reviews[:limit]
 
     def scrape(self, source: str, query: Optional[str] = None,
-              app_id: Optional[str] = None, limit: int = 50,
+              app_id: Optional[str] = None, limit: int = 500,
               sort_by: Optional[str] = None) -> List[Dict]:
         """
         Scrape data from the specified source.
