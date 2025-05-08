@@ -1,6 +1,15 @@
 # Features
 
-The Product Review Analyzer offers a comprehensive set of features designed to help product managers and businesses understand customer feedback efficiently.
+The Product Review Analyzer offers a comprehensive set of features designed to help product managers and development teams make data-driven decisions based on user feedback.
+
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green)
+![React](https://img.shields.io/badge/React-Latest-blue)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
+![AI](https://img.shields.io/badge/AI-Gemini_API-red)
+![NLP](https://img.shields.io/badge/NLP-Sentiment_Analysis-yellow)
+![Deployment](https://img.shields.io/badge/Deployment-AWS_EC2-orange)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ## Core Features
 

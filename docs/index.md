@@ -2,7 +2,18 @@
 
 ## Overview
 
-The Product Review Analyzer is a comprehensive tool designed to help product managers and businesses analyze customer feedback efficiently. It processes reviews from various sources, performs sentiment analysis, extracts key insights, and generates actionable summaries to help prioritize product improvements.
+The Product Review Analyzer is a powerful AI-driven application designed to help product managers and development teams make data-driven decisions. It analyzes product reviews, user feedback, and GitHub issues to generate actionable insights, identify pain points, extract feature requests, and highlight positive feedback.
+
+This tool leverages advanced AI technologies including Google's Gemini API, Hugging Face Transformers, and natural language processing libraries to provide comprehensive analysis of user sentiment and feedback. With features like real-time data scraping, batch processing, and interactive visualizations, it transforms raw feedback into strategic priorities for product development.
+
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green)
+![React](https://img.shields.io/badge/React-Latest-blue)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
+![AI](https://img.shields.io/badge/AI-Gemini_API-red)
+![NLP](https://img.shields.io/badge/NLP-Sentiment_Analysis-yellow)
+![Deployment](https://img.shields.io/badge/Deployment-AWS_EC2-orange)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ### Key Capabilities
 

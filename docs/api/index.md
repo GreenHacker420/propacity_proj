@@ -2,6 +2,15 @@
 
 The Product Review Analyzer exposes a comprehensive REST API for integration with other systems. This documentation provides details about all available endpoints, request/response formats, and authentication requirements.
 
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Latest-green)
+![React](https://img.shields.io/badge/React-Latest-blue)
+![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
+![AI](https://img.shields.io/badge/AI-Gemini_API-red)
+![NLP](https://img.shields.io/badge/NLP-Sentiment_Analysis-yellow)
+![Deployment](https://img.shields.io/badge/Deployment-AWS_EC2-orange)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
+
 ## Base URL
 
 All API endpoints are relative to the base URL:
