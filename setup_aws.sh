@@ -54,13 +54,29 @@ source venv/bin/activate
 echo -e "\n${GREEN}=== Installing Python dependencies ===${NC}"
 pip install --upgrade pip
 
-# Check if AWS requirements file exists
-if [ -f "backend/requirements.aws.txt" ]; then
-    echo "Installing AWS-specific requirements..."
-    pip install -r backend/requirements.aws.txt
+# Check if install_aws_deps.sh script exists
+if [ -f "install_aws_deps.sh" ]; then
+    echo "Using AWS dependencies installation script..."
+    chmod +x install_aws_deps.sh
+    ./install_aws_deps.sh
 else
-    echo "AWS requirements file not found, using standard requirements..."
-    pip install -r backend/requirements.txt
+    # Check if AWS requirements file exists
+    if [ -f "backend/requirements.aws.txt" ]; then
+        echo "Installing AWS-specific requirements..."
+        # Try to install with pip, but continue even if some packages fail
+        pip install -r backend/requirements.aws.txt || {
+            echo -e "${YELLOW}Warning: Some AWS packages failed to install.${NC}"
+            echo "Falling back to standard requirements..."
+            pip install -r backend/requirements.txt
+
+            # Try to install critical production packages individually
+            echo "Installing critical production packages individually..."
+            pip install gunicorn uvloop httptools || echo "Failed to install some production packages."
+        }
+    else
+        echo "AWS requirements file not found, using standard requirements..."
+        pip install -r backend/requirements.txt
+    fi
 fi
 
 # Download NLTK resources

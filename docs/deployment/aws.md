@@ -136,6 +136,13 @@ The `requirements.aws.txt` file includes additional dependencies optimized for p
 - `httptools`: Fast HTTP parsing
 - Additional performance optimizations
 
+For easier installation with fallbacks for problematic packages, you can use the provided script:
+```bash
+./install_aws_deps.sh
+```
+
+This script will handle installation of all required dependencies and provide fallbacks for packages that might have compilation issues on certain platforms.
+
 ### Step 7: Build the Frontend
 
 ```bash
@@ -368,13 +375,41 @@ chmod +x /home/ubuntu/backup.sh
    - Renew certificate: `sudo certbot renew`
 
 5. **Frontend Build Issues**:
-   - If you encounter errors during frontend build like `SyntaxError: Cannot use import statement outside a module`, it's likely a Node.js version issue
-   - Solution: Use Node.js 20.x instead of 18.x for better ES modules support
-   - Run the `build_frontend_aws.sh` script to build the frontend separately:
+   - If you encounter errors during frontend build like `SyntaxError: Cannot use import statement outside a module` or `Cannot find module '/node_modules/dist/node/cli.js'`, it's likely a Vite/Node.js compatibility issue
+   - Solutions:
+
+     a) Use the enhanced build script that tries multiple approaches:
      ```bash
      ./build_frontend_aws.sh
      ```
-   - Check the frontend build logs for specific errors
+
+     b) If that fails, use the Vite fix script that updates package.json with compatible versions:
+     ```bash
+     ./fix_vite_build.sh
+     ```
+
+     c) For manual fixing:
+     ```bash
+     cd frontend
+     # Downgrade Vite to a more stable version
+     npm uninstall vite
+     npm install vite@4.5.0
+     # Build using the Node.js API directly
+     node -e "import('vite').then(v => v.build({root: process.cwd()}))"
+     ```
+
+6. **Python Package Installation Issues**:
+   - If you encounter errors like `error: command '/usr/bin/x86_64-linux-gnu-g++' failed with exit code 1` when installing packages like `cchardet`
+   - Solution: Use the provided installation script that includes fallbacks:
+     ```bash
+     ./install_aws_deps.sh
+     ```
+   - For specific package issues:
+     - For `cchardet`: Use `charset-normalizer` as an alternative
+     - For C extension errors: Install development packages with:
+       ```bash
+       sudo apt-get install python3.11-dev build-essential
+       ```
 
 ## Security Best Practices
 

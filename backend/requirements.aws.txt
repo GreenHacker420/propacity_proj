@@ -9,7 +9,8 @@ httptools>=0.6.0
 
 # Performance optimizations
 aiodns>=3.1.1
-cchardet>=2.1.7
+# Replace cchardet with charset-normalizer which is more compatible
+charset-normalizer>=3.3.2
 orjson>=3.9.10
 
 # Monitoring
