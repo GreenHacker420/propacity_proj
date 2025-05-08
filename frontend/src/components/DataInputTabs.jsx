@@ -3,7 +3,6 @@ import { Tab } from '@headlessui/react';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import FileDropzone from './FileDropzone';
-import GitHubRepoInput from './GitHubRepoInput';
 
 // Helper function for class names
 function classNames(...classes) {
@@ -11,12 +10,11 @@ function classNames(...classes) {
 }
 
 /**
- * Component for data input tabs (Upload CSV, Scrape Data, GitHub Repo)
+ * Component for data input tabs (Upload CSV, Scrape Data)
  */
 const DataInputTabs = ({
   onFileUpload,
   onScrape,
-  onGitHubAnalysis,
   loading,
   uploadProgress
 }) => {
@@ -91,19 +89,6 @@ const DataInputTabs = ({
           }
         >
           Scrape Data
-        </Tab>
-        <Tab
-          className={({ selected }) =>
-            classNames(
-              'w-full rounded-lg py-2.5 text-sm font-medium leading-5',
-              'ring-white ring-opacity-60 ring-offset-2 ring-offset-primary-400 focus:outline-none focus:ring-2',
-              selected
-                ? 'bg-white text-primary-700 shadow'
-                : 'text-primary-100 hover:bg-white/[0.12] hover:text-white'
-            )
-          }
-        >
-          GitHub Repo
         </Tab>
       </Tab.List>
 
@@ -207,19 +192,6 @@ const DataInputTabs = ({
                 {loading ? 'Processing...' : 'Scrape Data'}
               </button>
             </div>
-          </motion.div>
-        </Tab.Panel>
-
-        {/* GitHub Repo Panel */}
-        <Tab.Panel>
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <h2 className="text-lg font-medium text-gray-800 mb-4">Analyze GitHub Repository</h2>
-            <GitHubRepoInput onSubmit={onGitHubAnalysis} isLoading={loading} />
           </motion.div>
         </Tab.Panel>
       </Tab.Panels>

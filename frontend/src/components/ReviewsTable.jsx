@@ -20,8 +20,7 @@ const ReviewsTable = ({ reviews }) => {
 
   // Filter reviews based on search term
   const filteredReviews = reviews.filter(review =>
-    review.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    review.game.toLowerCase().includes(searchTerm.toLowerCase())
+    review.text.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Sort reviews
@@ -67,9 +66,6 @@ const ReviewsTable = ({ reviews }) => {
       <table className="min-w-full bg-white rounded-lg overflow-hidden shadow">
         <thead className="bg-gray-100">
           <tr>
-            {reviews[0].source === 'github' && (
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue</th>
-            )}
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Text</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sentiment</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
@@ -87,11 +83,6 @@ const ReviewsTable = ({ reviews }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: index * 0.05 }}
             >
-              {review.source === 'github' && (
-                <td className="px-6 py-4 whitespace-normal text-sm font-medium text-primary-600">
-                  {review.issue_title}
-                </td>
-              )}
               <td className="px-6 py-4 whitespace-normal text-sm text-gray-900">{review.text}</td>
               <td className="px-6 py-4 whitespace-nowrap text-sm">
                 <span className={`px-2 py-1 rounded-full text-xs ${
@@ -118,7 +109,7 @@ const ReviewsTable = ({ reviews }) => {
               </td>
               {reviews.some(r => r.rating) && (
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {review.rating ? review.rating : '-'}
+                  {review.rating}
                 </td>
               )}
             </motion.tr>

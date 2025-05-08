@@ -2,7 +2,7 @@
 Models for Gemini API integration.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, root_validator
 from typing import List, Dict, Any, Optional
 
 class GeminiSentimentRequest(BaseModel):
@@ -37,6 +37,12 @@ class GeminiInsightResponse(BaseModel):
     feature_requests: List[str] = Field(..., description="Feature requests mentioned in reviews")
     positive_feedback: List[str] = Field(..., description="Positive feedback mentioned in reviews")
     processing_time: Optional[float] = Field(None, description="Processing time in seconds")
+
+    @root_validator(pre=True)
+    def map_positive_feedback(cls, values):
+        if "positive_feedback" not in values and "positive_aspects" in values:
+            values["positive_feedback"] = values.pop("positive_aspects")
+        return values
 
 class GeminiStatusResponse(BaseModel):
     """Response model for Gemini service status."""

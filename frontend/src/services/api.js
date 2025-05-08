@@ -83,6 +83,7 @@ const api = {
       };
     }
   },
+
   // Upload and analyze a CSV file
   uploadFile: async (file) => {
     const formData = new FormData();
@@ -110,43 +111,6 @@ const api = {
 
     const response = await axios.get('/api/scrape', { params });
     return response.data;
-  },
-
-  // Analyze GitHub repository
-  analyzeGitHub: async (url) => {
-    // This is a placeholder for the actual GitHub analysis API
-    // For now, we'll simulate the API call with mock data
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Create mock data for GitHub analysis
-    const mockGitHubData = {
-      issues: [
-        { id: 1, title: "App crashes when uploading large files", body: "When I try to upload files larger than 10MB, the app crashes without any error message.", labels: ["bug", "high-priority"] },
-        { id: 2, title: "Add dark mode support", body: "It would be great to have a dark mode option for the UI.", labels: ["enhancement", "ui"] },
-        { id: 3, title: "Search functionality not working properly", body: "The search doesn't return results for partial matches.", labels: ["bug"] }
-      ],
-      discussions: [
-        { id: 1, title: "Roadmap for v2.0", body: "Let's discuss the features we want to include in version 2.0" },
-        { id: 2, title: "Performance improvements", body: "We should focus on improving load times for the dashboard" }
-      ]
-    };
-
-    // Create mock analyzed reviews from GitHub data
-    const mockAnalyzedReviews = mockGitHubData.issues.map(issue => ({
-      text: issue.body,
-      sentiment_label: issue.labels.includes("bug") ? "NEGATIVE" : "POSITIVE",
-      sentiment_score: issue.labels.includes("bug") ? 0.2 : 0.8,
-      category: issue.labels.includes("bug") ? "pain_point" :
-               issue.labels.includes("enhancement") ? "feature_request" : "positive_feedback",
-      keywords: issue.labels,
-      source: "github",
-      issue_title: issue.title
-    }));
-
-    return {
-      repoData: mockGitHubData,
-      analyzedReviews: mockAnalyzedReviews
-    };
   },
 
   // Perform sentiment analysis on a batch of texts
@@ -243,13 +207,13 @@ const api = {
     const response = await axios.get('/api/weekly/summaries', { params });
     return response.data;
   },
-
-  // Get prioritized insights from recent feedback
-  getPriorityInsights: async (sourceType = null) => {
-    const params = sourceType ? { source_type: sourceType } : {};
-    const response = await axios.get('/api/weekly/priorities', { params });
-    return response.data;
-  },
+  
+    // Get prioritized insights from recent feedback
+    getPriorityInsights: async (sourceType = null) => {
+      const params = sourceType ? { source_type: sourceType } : {};
+      const response = await axios.get('/api/weekly/priorities', { params });
+      return response.data;
+    },
 
   // Get analysis history
   getAnalysisHistory: async () => {

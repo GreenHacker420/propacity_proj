@@ -211,58 +211,6 @@ const useDataProcessing = (processingHook) => {
     }
   };
 
-  // Process GitHub repository analysis
-  const processGitHubAnalysis = async (url) => {
-    let result = null;
-
-    try {
-      setLoading(true);
-      setError(null);
-      setProcessingStep(0);
-
-      // Simulate data collection progress
-      const fetchInterval = startProgressSimulation(150, 2);
-
-      // Analyze GitHub repository
-      const response = await api.analyzeGitHub(url);
-      const { repoData, analyzedReviews: githubReviews } = response;
-
-      // Save the result to return
-      result = { repoData, analyzedReviews: githubReviews };
-
-      // Clear interval and complete progress
-      clearInterval(fetchInterval);
-      completeProgress();
-
-      // Process sentiment, categorization, and keywords
-      for (let step = 1; step <= 3; step++) {
-        setProcessingStep(step);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-
-      // Store the analyzed reviews
-      setAnalyzedReviews(githubReviews);
-      setRecordCount(githubReviews.length);
-
-      // Move to summary creation step
-      setProcessingStep(4);
-
-      // Generate summary
-      await generateSummary(githubReviews, url, 'github');
-
-      // Switch to the summary view
-      setActiveView('summary');
-
-      return result;
-    } catch (err) {
-      console.error('GitHub analysis error:', err);
-      setError('Error analyzing GitHub repository');
-      return null;
-    } finally {
-      resetProcessing();
-    }
-  };
-
   // Generate summary from analyzed reviews
   const generateSummary = async (reviewsData, sourceName, sourceType) => {
     const startTime = Date.now();
@@ -321,7 +269,6 @@ const useDataProcessing = (processingHook) => {
     setActiveView,
     processFileUpload,
     processScraping,
-    processGitHubAnalysis,
     downloadPDF,
     resetData
   };

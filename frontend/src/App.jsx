@@ -14,7 +14,6 @@ import ErrorMessage from './components/ErrorMessage';
 import ReviewsTable from './components/ReviewsTable';
 import SummaryView from './components/SummaryView';
 import HistoryView from './components/HistoryView';
-import GitHubDetails from './components/GitHubDetails';
 import APIStatusIndicator from './components/APIStatusIndicator';
 import APIQuotaDisplay from './components/APIQuotaDisplay';
 import GeminiStatusIndicator from './components/GeminiStatusIndicator';
@@ -46,33 +45,17 @@ function App() {
     setActiveView,
     processFileUpload,
     processScraping,
-    processGitHubAnalysis,
     downloadPDF,
     resetData
   } = dataHook;
-
-  // GitHub state
-  const [repoUrl, setRepoUrl] = useState('');
-  const [repoData, setRepoData] = useState(null);
 
   // History state
   const [showHistory, setShowHistory] = useState(false);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
 
-  // Handle GitHub analysis with URL tracking
-  const handleGitHubAnalysis = async (url) => {
-    setRepoUrl(url);
-    const result = await processGitHubAnalysis(url);
-    if (result && result.repoData) {
-      setRepoData(result.repoData);
-    }
-  };
-
   // Reset all data and return to input screen
   const handleReset = () => {
     resetData();
-    setRepoUrl('');
-    setRepoData(null);
     clearApiStatus();
     setShowHistory(false);
     setSelectedHistoryItem(null);
@@ -165,7 +148,6 @@ function App() {
             <DataInputTabs
               onFileUpload={processFileUpload}
               onScrape={processScraping}
-              onGitHubAnalysis={handleGitHubAnalysis}
               loading={loading}
               uploadProgress={uploadProgress}
             />
@@ -210,9 +192,6 @@ function App() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* GitHub Repository Details - Show when GitHub data is available */}
-          <GitHubDetails repoData={repoData} repoUrl={repoUrl} />
 
           {/* Summary View */}
           <AnimatePresence>
