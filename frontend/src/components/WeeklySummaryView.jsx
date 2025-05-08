@@ -19,6 +19,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+
 /**
  * Component for displaying the weekly summary of user feedback for product managers
  */

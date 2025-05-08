@@ -483,7 +483,16 @@ class TextAnalyzer:
                     "sentiment_score": 0.5,
                     "keywords": []
                 }],
-                "suggested_priorities": ["Collect more user feedback for analysis"]
+                "suggested_priorities": ["Collect more user feedback for analysis"],
+                "total_reviews": 0,
+                "sentiment_distribution": {
+                    "positive": 0,
+                    "neutral": 0,
+                    "negative": 0
+                },
+                "average_sentiment": 0.5,
+                "top_keywords": {},
+                "reviews": []
             }
 
         # Check if Gemini API is available
@@ -523,7 +532,12 @@ class TextAnalyzer:
                     "pain_points": [],
                     "feature_requests": [],
                     "positive_feedback": [],
-                    "suggested_priorities": []
+                    "suggested_priorities": [],
+                    "total_reviews": len(reviews),
+                    "sentiment_distribution": {"positive": 0, "neutral": 0, "negative": 0},
+                    "average_sentiment": 0.5,
+                    "top_keywords": {},
+                    "reviews": reviews
                 }
 
                 # Process pain points
@@ -596,6 +610,38 @@ class TextAnalyzer:
                 if not summary_response["suggested_priorities"]:
                     summary_response["suggested_priorities"] = ["Collect more specific user feedback for detailed analysis"]
 
+                # Calculate sentiment distribution from reviews
+                sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
+                total_sentiment = 0
+
+                for review in reviews:
+                    sentiment_score = get_attr(review, "sentiment_score", 0.5)
+                    total_sentiment += sentiment_score
+
+                    if sentiment_score >= 0.7:
+                        sentiment_counts["positive"] += 1
+                    elif sentiment_score <= 0.3:
+                        sentiment_counts["negative"] += 1
+                    else:
+                        sentiment_counts["neutral"] += 1
+
+                # Update the response with calculated metrics
+                summary_response["sentiment_distribution"] = sentiment_counts
+                summary_response["average_sentiment"] = total_sentiment / len(reviews) if reviews else 0.5
+
+                # Extract keywords from all reviews
+                all_keywords = {}
+                for review in reviews:
+                    keywords = get_attr(review, "keywords", [])
+                    for keyword in keywords:
+                        if keyword in all_keywords:
+                            all_keywords[keyword] += 1
+                        else:
+                            all_keywords[keyword] = 1
+
+                # Sort keywords by frequency and take top 15
+                summary_response["top_keywords"] = dict(sorted(all_keywords.items(), key=lambda x: x[1], reverse=True)[:15])
+
                 return summary_response
 
             except Exception as e:
@@ -614,7 +660,7 @@ class TextAnalyzer:
             reviews: List of analyzed review objects
 
         Returns:
-            Dictionary with summary information
+            Dictionary with summary information including all required fields for visualization
         """
         # Helper function to get attribute from either dict or object with improved error handling
         def get_attr(obj, attr, default=None):
@@ -761,12 +807,48 @@ class TextAnalyzer:
                 "keywords": []
             }]
 
+        # Calculate sentiment distribution
+        sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
+        for review in reviews:
+            sentiment_score = get_attr(review, "sentiment_score", 0.5)
+            if sentiment_score >= 0.7:
+                sentiment_counts["positive"] += 1
+            elif sentiment_score <= 0.3:
+                sentiment_counts["negative"] += 1
+            else:
+                sentiment_counts["neutral"] += 1
+
+        # Extract keywords from all reviews
+        all_keywords = {}
+        for review in reviews:
+            keywords = get_attr(review, "keywords", [])
+            for keyword in keywords:
+                if keyword in all_keywords:
+                    all_keywords[keyword] += 1
+                else:
+                    all_keywords[keyword] = 1
+
+        # Sort keywords by frequency and take top 15
+        top_keywords = dict(sorted(all_keywords.items(), key=lambda x: x[1], reverse=True)[:15])
+
         # Create the summary response with all required fields for the frontend
         summary_response = {
+            # Required fields
             "pain_points": pain_point_items,
             "feature_requests": feature_request_items,
             "positive_feedback": positive_feedback_items,
-            "suggested_priorities": priorities
+            "suggested_priorities": priorities,
+
+            # Metrics for visualization
+            "total_reviews": len(reviews),
+            "sentiment_distribution": sentiment_counts,
+            "average_sentiment": sum(get_attr(review, "sentiment_score", 0.5) for review in reviews) / len(reviews) if reviews else 0.5,
+
+            # Optional distributions for charts
+            "top_keywords": top_keywords,
+
+            # Include the original reviews
+            "reviews": reviews
         }
 
         return summary_response

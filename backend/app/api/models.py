@@ -53,10 +53,22 @@ class SummaryItem(BaseModel):
     keywords: List[str]
 
 class SummaryResponse(BaseModel):
+    # Required fields
     pain_points: List[SummaryItem]
     feature_requests: List[SummaryItem]
     positive_feedback: List[SummaryItem]
     suggested_priorities: List[str]
+
+    # Metrics for visualization
+    total_reviews: int
+    sentiment_distribution: Dict[str, int]
+    average_sentiment: float
+
+    # Optional distributions for charts
+    top_keywords: Optional[Dict[str, int]] = {}
+
+    # Include the original reviews
+    reviews: Optional[List[ReviewResponse]] = []
 
 class VisualizationResponse(BaseModel):
     sentiment_chart: Optional[str] = None
