@@ -21,6 +21,7 @@ class ReviewCreate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 class ReviewResponse(BaseModel):
+    id: Optional[int] = None
     text: str
     username: Optional[str] = None
     timestamp: Optional[datetime] = None

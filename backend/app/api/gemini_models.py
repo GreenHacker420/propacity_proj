@@ -32,10 +32,16 @@ class GeminiInsightRequest(BaseModel):
 class GeminiInsightResponse(BaseModel):
     """Response model for insights extracted with Gemini."""
     summary: str = Field(..., description="Summary of the reviews")
-    key_points: List[str] = Field(..., description="Key points extracted from reviews")
-    pain_points: List[str] = Field(..., description="Pain points mentioned in reviews")
-    feature_requests: List[str] = Field(..., description="Feature requests mentioned in reviews")
-    positive_feedback: List[str] = Field(..., description="Positive feedback mentioned in reviews")
+    sentiment_distribution: Dict[str, int] = Field(..., description="Distribution of sentiments")
+    classification_distribution: Dict[str, int] = Field(..., description="Distribution of classifications")
+    game_distribution: Dict[str, int] = Field(..., description="Distribution of games")
+    top_keywords: Dict[str, int] = Field(..., description="Top keywords")
+    total_reviews: int = Field(..., description="Total number of reviews")
+    average_sentiment: float = Field(..., description="Average sentiment score")
+    pain_points: Optional[List[str]] = Field(None, description="Pain points mentioned in reviews")
+    feature_requests: Optional[List[str]] = Field(None, description="Feature requests mentioned in reviews")
+    positive_feedback: Optional[List[str]] = Field(None, description="Positive feedback mentioned in reviews")
+    suggested_priorities: Optional[List[str]] = Field(None, description="Suggested priorities")
     processing_time: Optional[float] = Field(None, description="Processing time in seconds")
 
     @root_validator(pre=True)

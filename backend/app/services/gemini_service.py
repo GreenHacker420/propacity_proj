@@ -607,20 +607,47 @@ class GeminiService:
 
             # Improved prompt for more reliable JSON responses
             prompt = f"""
-            Analyze sentiment of these reviews. Return a valid JSON array with objects containing:
-            "score" (float 0-1, negative to positive), "label" (string: "POSITIVE"/"NEGATIVE"/"NEUTRAL"), "confidence" (float 0-1).
+            Analyze the following product reviews and extract insights. You MUST return a valid JSON object with EXACTLY this structure:
+            {{
+              "summary": "A brief summary of the overall feedback",
+              "sentiment_distribution": {{
+                "positive": 0,
+                "neutral": 0,
+                "negative": 0
+              }},
+              "classification_distribution": {{
+                "pain_point": 0,
+                "feature_request": 0,
+                "positive_feedback": 0,
+                "suggested_priority": 0
+              }},
+              "game_distribution": {{}},
+              "top_keywords": {{}},
+              "total_reviews": 0,
+              "average_sentiment": 0.0,
+              "pain_points": ["Pain point 1", "Pain point 2"],
+              "feature_requests": ["Feature request 1", "Feature request 2"],
+              "positive_feedback": ["Positive aspect 1", "Positive aspect 2"],
+              "suggested_priorities": ["Priority 1", "Priority 2"]
+            }}
 
-            Example of expected format:
-            [
-              {{"score": 0.8, "label": "POSITIVE", "confidence": 0.9}},
-              {{"score": 0.2, "label": "NEGATIVE", "confidence": 0.7}}
-            ]
+            IMPORTANT:
+            1. Return ONLY valid JSON with the exact keys specified above
+            2. Do not include any markdown formatting or code block markers
+            3. Use DOUBLE QUOTES for all keys and string values
+            4. All arrays MUST contain at least one item
+            5. The "summary" field MUST NOT be empty
+            6. Be concise in your summary and limit each array to at most 7 items
+            7. DO NOT include any explanations, notes, or additional text outside the JSON object
+            8. Calculate sentiment_distribution based on the number of items in each category
+            9. Calculate classification_distribution based on the number of items in each array
+            10. For game_distribution, identify and count mentions of specific games
+            11. For top_keywords, extract and count important keywords from the reviews
+            12. Set total_reviews to the actual number of reviews analyzed
+            13. Calculate average_sentiment as a float between 0.0 (negative) and 1.0 (positive)
 
-            Reviews:
+            Reviews to analyze:
             {reviews_text}
-
-            IMPORTANT: Return ONLY the JSON array with no markdown formatting, no ```json tags, and no other text.
-            Use double quotes for all keys and string values.
             """
 
             # Track API call performance
@@ -690,8 +717,30 @@ class GeminiService:
                             logger.info("Successfully parsed JSON after quote replacement")
                         except json.JSONDecodeError:
                             logger.error(f"All JSON extraction methods failed. Response text: {text[:500]}...")
-                            # Fall back to local processing
-                            raise ValueError("Failed to parse JSON response from Gemini API")
+                            # Create a default structure from the raw text
+                            result = {
+                                "summary": text[:250] if len(text) > 0 else "No summary available",
+                                "sentiment_distribution": {
+                                    "positive": 0,
+                                    "neutral": 0,
+                                    "negative": 0
+                                },
+                                "classification_distribution": {
+                                    "pain_point": 0,
+                                    "feature_request": 0,
+                                    "positive_feedback": 0,
+                                    "suggested_priority": 0
+                                },
+                                "game_distribution": {},
+                                "top_keywords": {},
+                                "total_reviews": len(reviews),
+                                "average_sentiment": 0.5,
+                                "pain_points": ["No specific pain points identified"],
+                                "feature_requests": ["No specific feature requests identified"],
+                                "positive_feedback": ["No specific positive feedback identified"],
+                                "suggested_priorities": ["No specific priorities identified"]
+                            }
+                            logger.info("Created fallback structure with standardized format")
 
             processing_time = time.time() - start_time
             logger.info(f"Gemini batch review analysis completed in {processing_time:.2f} seconds for {len(reviews)} reviews")
@@ -728,7 +777,7 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Error in Gemini batch review analysis: {str(e)}")
 
-            # Check if this is a rate limit error
+            # Handle rate limit errors
             if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
                 self.consecutive_failures += 1
                 wait_time = min(300, self.initial_wait_time * (self.backoff_factor ** (self.consecutive_failures - 1)))
@@ -742,6 +791,29 @@ class GeminiService:
                 # Check if we should open the circuit breaker
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
+
+                return {
+                    "summary": "Rate limit exceeded. Using local processing temporarily.",
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
+                    "pain_points": ["API rate limits reached"],
+                    "feature_requests": ["Will automatically retry Gemini API when limits reset"],
+                    "positive_feedback": ["Basic analysis still available during rate limiting"],
+                    "suggested_priorities": ["Wait for rate limit reset"]
+                }
             else:
                 # For non-rate-limit errors, still increment failure counter but with less weight
                 self.consecutive_failures += 0.5
@@ -750,12 +822,28 @@ class GeminiService:
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
 
-            # Log detailed error information for debugging
-            import traceback
-            logger.error(f"Detailed error in batch review analysis: {traceback.format_exc()}")
-
-            # Return neutral results instead of local processing
-            return [{"score": 0.5, "label": "NEUTRAL", "confidence": 0.0} for _ in reviews]
+                return {
+                    "summary": f"Error extracting insights: {str(e)}",
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
+                    "pain_points": ["API processing error encountered"],
+                    "feature_requests": ["System will automatically retry later"],
+                    "positive_feedback": ["Basic analysis still available"],
+                    "suggested_priorities": ["Try again later"]
+                }
 
     def extract_insights(self, reviews: List[str]) -> Dict[str, Any]:
         """
@@ -1091,7 +1179,7 @@ class GeminiService:
             reviews_hash = hashlib.md5(str(reviews[:100]).encode()).hexdigest()
             cache_key = f"insights_batch_{reviews_hash}_{len(reviews)}"
 
-            # Check if this is a rate limit error
+            # Handle rate limit errors
             if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
                 self.consecutive_failures += 1
                 wait_time = min(300, self.initial_wait_time * (self.backoff_factor ** (self.consecutive_failures - 1)))
@@ -1100,48 +1188,64 @@ class GeminiService:
                 self.rate_limited = True
                 self.rate_limit_reset_time = time.time() + wait_time
 
-                logger.warning(f"Rate limit exceeded. Using fallback for {wait_time} seconds.")
+                logger.warning(f"Rate limit exceeded in insight extraction. Using fallback for {wait_time} seconds.")
 
                 # Check if we should open the circuit breaker
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
 
-                fallback_result = {
+                return {
                     "summary": "Rate limit exceeded. Using local processing temporarily.",
-                    "key_points": ["Rate limit active - temporarily using local processing"],
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
                     "pain_points": ["API rate limits reached"],
                     "feature_requests": ["Will automatically retry Gemini API when limits reset"],
                     "positive_feedback": ["Basic analysis still available during rate limiting"],
-                    "error": str(e),
-                    "error_type": "rate_limit"
+                    "suggested_priorities": ["Wait for rate limit reset"]
                 }
-
-                # Cache the fallback result with a shorter expiration time
-                self._add_to_cache(cache_key, fallback_result, "insight", expiration=wait_time)
-
-                return fallback_result
             else:
-                # For non-rate-limit errors, still increment failure counter but with less weight
+                # For non-rate-limit errors
                 self.consecutive_failures += 0.5
 
                 # Check if we should open the circuit breaker
                 if self.consecutive_failures >= self.failure_threshold:
                     self._open_circuit()
 
-                fallback_result = {
+                return {
                     "summary": f"Error extracting insights: {str(e)}",
-                    "key_points": ["Error occurred during API processing"],
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
                     "pain_points": ["API processing error encountered"],
                     "feature_requests": ["System will automatically retry later"],
                     "positive_feedback": ["Basic analysis still available"],
-                    "error": str(e),
-                    "error_type": "general"
+                    "suggested_priorities": ["Try again later"]
                 }
-
-                # Cache the fallback result with a shorter expiration time (5 minutes)
-                self._add_to_cache(cache_key, fallback_result, "insight", expiration=300)
-
-                return fallback_result
 
     def _extract_insights_single_batch(self, reviews: List[str]) -> Dict[str, Any]:
         """
@@ -1168,13 +1272,6 @@ class GeminiService:
             Analyze the following product reviews and extract insights. You MUST return a valid JSON object with EXACTLY this structure:
             {{
               "summary": "A brief summary of the overall feedback",
-              "key_points": ["Point 1", "Point 2", "Point 3"],
-              "pain_points": ["Pain point 1", "Pain point 2", "Pain point 3"],
-              "feature_requests": ["Feature request 1", "Feature request 2", "Feature request 3"],
-              "positive_feedback": ["Positive aspect 1", "Positive aspect 2", "Positive aspect 3"],
-              "suggested_priorities": ["Priority 1", "Priority 2", "Priority 3"],
-              "source_type": "reviews",
-              "source_name": "Product Reviews",
               "sentiment_distribution": {{
                 "positive": 0,
                 "neutral": 0,
@@ -1185,7 +1282,15 @@ class GeminiService:
                 "feature_request": 0,
                 "positive_feedback": 0,
                 "suggested_priority": 0
-              }}
+              }},
+              "game_distribution": {{}},
+              "top_keywords": {{}},
+              "total_reviews": 0,
+              "average_sentiment": 0.0,
+              "pain_points": ["Pain point 1", "Pain point 2"],
+              "feature_requests": ["Feature request 1", "Feature request 2"],
+              "positive_feedback": ["Positive aspect 1", "Positive aspect 2"],
+              "suggested_priorities": ["Priority 1", "Priority 2"]
             }}
 
             IMPORTANT:
@@ -1196,8 +1301,12 @@ class GeminiService:
             5. The "summary" field MUST NOT be empty
             6. Be concise in your summary and limit each array to at most 7 items
             7. DO NOT include any explanations, notes, or additional text outside the JSON object
-            8. The "source_type" and "source_name" fields are required and must be included
-            9. The sentiment_distribution and classification_distribution must reflect the counts of items in their respective arrays
+            8. Calculate sentiment_distribution based on the number of items in each category
+            9. Calculate classification_distribution based on the number of items in each array
+            10. For game_distribution, identify and count mentions of specific games
+            11. For top_keywords, extract and count important keywords from the reviews
+            12. Set total_reviews to the actual number of reviews analyzed
+            13. Calculate average_sentiment as a float between 0.0 (negative) and 1.0 (positive)
 
             Reviews to analyze:
             {reviews_text}
@@ -1278,12 +1387,27 @@ class GeminiService:
                             # Create a default structure from the raw text
                             result = {
                                 "summary": text[:250] if len(text) > 0 else "No summary available",
-                                "key_points": ["No specific key points identified"],
+                                "sentiment_distribution": {
+                                    "positive": 0,
+                                    "neutral": 0,
+                                    "negative": 0
+                                },
+                                "classification_distribution": {
+                                    "pain_point": 0,
+                                    "feature_request": 0,
+                                    "positive_feedback": 0,
+                                    "suggested_priority": 0
+                                },
+                                "game_distribution": {},
+                                "top_keywords": {},
+                                "total_reviews": len(reviews),
+                                "average_sentiment": 0.5,
                                 "pain_points": ["No specific pain points identified"],
                                 "feature_requests": ["No specific feature requests identified"],
-                                "positive_feedback": ["No specific positive aspects identified"]
+                                "positive_feedback": ["No specific positive feedback identified"],
+                                "suggested_priorities": ["No specific priorities identified"]
                             }
-                            logger.info("Created fallback structure from raw text")
+                            logger.info("Created fallback structure with standardized format")
 
             # Ensure all required fields exist with default values if missing
             if "summary" not in result or not result["summary"]:
@@ -1352,10 +1476,25 @@ class GeminiService:
 
             return {
                 "summary": f"Error parsing insights: {str(ve)}",
-                "key_points": ["JSON parsing error occurred"],
-                "pain_points": ["Unable to process API response format"],
+                "sentiment_distribution": {
+                    "positive": 0,
+                    "neutral": 0,
+                    "negative": 0
+                },
+                "classification_distribution": {
+                    "pain_point": 0,
+                    "feature_request": 0,
+                    "positive_feedback": 0,
+                    "suggested_priority": 0
+                },
+                "game_distribution": {},
+                "top_keywords": {},
+                "total_reviews": len(reviews),
+                "average_sentiment": 0.5,
+                "pain_points": ["JSON parsing error occurred"],
                 "feature_requests": ["System will automatically retry with improved parsing"],
-                "positive_feedback": ["Basic analysis still available"]
+                "positive_feedback": ["Basic analysis still available"],
+                "suggested_priorities": ["Try again later"]
             }
 
         except json.JSONDecodeError as je:
@@ -1369,16 +1508,31 @@ class GeminiService:
 
             return {
                 "summary": "Error processing insights due to invalid JSON format",
-                "key_points": ["JSON format error detected"],
-                "pain_points": ["API returned improperly formatted data"],
+                "sentiment_distribution": {
+                    "positive": 0,
+                    "neutral": 0,
+                    "negative": 0
+                },
+                "classification_distribution": {
+                    "pain_point": 0,
+                    "feature_request": 0,
+                    "positive_feedback": 0,
+                    "suggested_priority": 0
+                },
+                "game_distribution": {},
+                "top_keywords": {},
+                "total_reviews": len(reviews),
+                "average_sentiment": 0.5,
+                "pain_points": ["JSON format error detected"],
                 "feature_requests": ["System will automatically retry with improved parsing"],
-                "positive_feedback": ["Basic analysis still available"]
+                "positive_feedback": ["Basic analysis still available"],
+                "suggested_priorities": ["Try again later"]
             }
 
         except Exception as e:
             logger.error(f"Error in single batch insight extraction: {str(e)}")
 
-            # Check if this is a rate limit error
+            # Handle rate limit errors
             if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
                 self.consecutive_failures += 1
                 wait_time = min(300, self.initial_wait_time * (self.backoff_factor ** (self.consecutive_failures - 1)))
@@ -1395,10 +1549,25 @@ class GeminiService:
 
                 return {
                     "summary": "Rate limit exceeded. Using local processing temporarily.",
-                    "key_points": ["Rate limit active - temporarily using local processing"],
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
                     "pain_points": ["API rate limits reached"],
                     "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                    "positive_feedback": ["Basic analysis still available during rate limiting"]
+                    "positive_feedback": ["Basic analysis still available during rate limiting"],
+                    "suggested_priorities": ["Wait for rate limit reset"]
                 }
             else:
                 # For non-rate-limit errors, still increment failure counter but with less weight
@@ -1414,10 +1583,25 @@ class GeminiService:
 
                 return {
                     "summary": f"Error extracting insights: {str(e)}",
-                    "key_points": ["Error occurred during API processing"],
+                    "sentiment_distribution": {
+                        "positive": 0,
+                        "neutral": 0,
+                        "negative": 0
+                    },
+                    "classification_distribution": {
+                        "pain_point": 0,
+                        "feature_request": 0,
+                        "positive_feedback": 0,
+                        "suggested_priority": 0
+                    },
+                    "game_distribution": {},
+                    "top_keywords": {},
+                    "total_reviews": len(reviews),
+                    "average_sentiment": 0.5,
                     "pain_points": ["API processing error encountered"],
                     "feature_requests": ["System will automatically retry later"],
-                    "positive_feedback": ["Basic analysis still available"]
+                    "positive_feedback": ["Basic analysis still available"],
+                    "suggested_priorities": ["Try again later"]
                 }
 
     def _generate_combined_summary(self, summaries: List[str]) -> str:

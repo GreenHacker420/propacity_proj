@@ -21,7 +21,12 @@ from ..auth.mongo_auth import get_current_active_user, get_current_user_optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# Create router
+router = APIRouter(
+    tags=["api"],
+    responses={404: {"description": "Not found"}}
+)
+
 analyzer = TextAnalyzer()
 scraper = Scraper()
 visualizer = Visualizer()
@@ -641,6 +646,23 @@ async def get_summary(reviews: List[ReviewResponse]):
         return analyzer.generate_summary(reviews)
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/categorize", response_model=List[ReviewResponse])
+async def categorize_reviews(reviews: List[ReviewResponse]):
+    """
+    Categorize reviews into pain points, feature requests, and positive feedback
+    """
+    try:
+        if not reviews:
+            raise HTTPException(status_code=400, detail="No reviews provided")
+
+        # Use the analyzer to categorize reviews
+        categorized_reviews = analyzer.categorize_reviews(reviews)
+        return categorized_reviews
+
+    except Exception as e:
+        logger.error(f"Error categorizing reviews: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/summary/pdf")

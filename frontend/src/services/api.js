@@ -107,8 +107,8 @@ const api = {
     const formData = new FormData();
     formData.append('file', file);
 
-    // Use direct URL to backend to avoid proxy issues
-    const response = await axios.post('http://localhost:8000/api/upload', formData, {
+    // Use axios with baseURL configuration
+    const response = await axios.post('/api/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         // Explicitly remove any Authorization header
@@ -133,14 +133,29 @@ const api = {
 
   // Perform sentiment analysis on a batch of texts
   analyzeSentiment: async (texts) => {
-    const response = await axios.post('/api/sentiment/batch', { texts });
+    const response = await axios.post('/api/sentiment/batch', {
+      texts: Array.isArray(texts) ? texts : [texts]
+    });
+    return response.data;
+  },
+
+  // Categorize reviews
+  categorizeReviews: async (reviews) => {
+    const response = await axios.post('/api/categorize', {
+      reviews: Array.isArray(reviews) ? reviews : [reviews]
+    });
     return response.data;
   },
 
   // Generate summary from analyzed reviews
   generateSummary: async (reviewsData) => {
-    const response = await axios.post('/api/summary', reviewsData);
-    return response.data;
+    try {
+      const response = await axios.post('/api/summary', reviewsData);
+      return response.data;
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      throw error;
+    }
   },
 
   // Record processing time
@@ -169,8 +184,8 @@ const api = {
 
   // Record analysis history
   recordAnalysisHistory: async (sourceType, sourceName, reviewsData, summary) => {
-    // Use direct URL to backend to avoid proxy issues
-    await axios.post('http://localhost:8000/api/history', {
+    // Use axios with baseURL configuration
+    await axios.post('/api/history', {
       source_type: sourceType,
       source_name: sourceName,
       record_count: reviewsData.length,
@@ -199,10 +214,19 @@ const api = {
   },
 
   // Get prioritized insights from recent feedback
-  getPriorityInsights: async (sourceType = null) => {
-    const params = sourceType ? { source_type: sourceType } : {};
-    const response = await axios.get('/api/weekly/priorities', { params });
-    return response.data;
+  getPriorityInsights: async (sourceType, timeRange = 'week') => {
+    try {
+      const response = await axios.get('/api/weekly/priorities', {
+        params: {
+          source_type: sourceType,
+          time_range: timeRange
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching insights:', error);
+      throw error;
+    }
   },
 
   // Create a weekly summary for a specific source
@@ -225,13 +249,6 @@ const api = {
     const response = await axios.get('/api/weekly/summaries', { params });
     return response.data;
   },
-  
-    // Get prioritized insights from recent feedback
-    getPriorityInsights: async (sourceType = null) => {
-      const params = sourceType ? { source_type: sourceType } : {};
-      const response = await axios.get('/api/weekly/priorities', { params });
-      return response.data;
-    },
 
   // Get analysis history
   getAnalysisHistory: async () => {
@@ -262,6 +279,71 @@ const api = {
       return true;
     } catch (error) {
       console.error(`Error deleting analysis with ID ${analysisId}:`, error);
+      throw error;
+    }
+  },
+
+  async getAnalytics() {
+    try {
+      const response = await axios.get('/analytics');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+      throw error;
+    }
+  },
+
+  async getPriorityInsights(sourceType, timeRange = 'week') {
+    try {
+      const response = await axios.get('/api/weekly/priorities', {
+        params: {
+          source_type: sourceType,
+          time_range: timeRange
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching insights:', error);
+      throw error;
+    }
+  },
+
+  async getReviews(filters = {}) {
+    try {
+      const response = await axios.get('/reviews', { params: filters });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+      throw error;
+    }
+  },
+
+  async scrapeReviews(source) {
+    try {
+      const response = await axios.post('/scrape', { source });
+      return response.data;
+    } catch (error) {
+      console.error('Error scraping reviews:', error);
+      throw error;
+    }
+  },
+
+  async downloadPDF(filters = {}) {
+    try {
+      const response = await axios.get('/export/pdf', {
+        params: filters,
+        responseType: 'blob'
+      });
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'feedback-analysis.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
       throw error;
     }
   }

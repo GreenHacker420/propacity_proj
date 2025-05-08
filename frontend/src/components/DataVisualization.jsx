@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell, ResponsiveContainer
+  PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
@@ -55,257 +55,209 @@ const AnimatedNumber = ({ value, prefix = '', suffix = '', duration = 1 }) => {
 const DataVisualization = ({ data }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [chartData, setChartData] = useState(null);
+  const [timeRange, setTimeRange] = useState('all');
+  const [selectedGame, setSelectedGame] = useState('all');
 
   useEffect(() => {
     if (data) {
       try {
-        // Performance optimization: Use a ref to track if we've already processed this data
-        // This prevents unnecessary re-renders
-        const dataId = data.id || JSON.stringify(data).slice(0, 100);
-
-        // Handle the case where data is the summary itself or contains a summary property
         const summary = data.summary || data;
 
         if (!summary) {
           console.error('Summary data is missing');
-          // Instead of returning, set default empty data
-          setChartData({
-            sentimentData: [],
-            classificationData: [],
-            gameData: [],
-            keywordData: [],
-            summary: {
-              total_reviews: 0,
-              average_sentiment: 0,
-              sentiment_distribution: {},
-              classification_distribution: {},
-              game_distribution: {},
-              top_keywords: {}
-            }
-          });
+          setDefaultChartData();
           return;
         }
 
-        // Safely access properties with fallbacks
-        // Handle both normal summary structure and fallback structure from local processing
-        const sentimentDistribution = summary.sentiment_distribution || {};
-        const classificationDistribution = summary.classification_distribution || {};
-        const gameDistribution = summary.game_distribution || {};
-        const topKeywords = summary.top_keywords || {};
+        // Initialize distributions with default empty objects
+        const distributions = {
+          sentiment: summary.sentiment_distribution || {},
+          classification: summary.classification_distribution || {},
+          game: summary.game_distribution || {},
+          keywords: summary.top_keywords || {},
+          timeBased: summary.time_based_distribution || {},
+          userSegments: summary.user_segments || {},
+          featureRequests: summary.feature_requests || {},
+          painPoints: summary.pain_points || {}
+        };
 
-        // If we're in fallback mode, we might have a different structure
-        // Check if we have the expected properties, if not, create default values
-        if (Object.keys(sentimentDistribution).length === 0 &&
-            (summary.pain_points || summary.feature_requests || summary.positive_feedback ||
-             summary.suggested_priorities)) {
-          // We're likely in fallback mode with a different data structure
-          console.log('Using fallback data structure for visualization');
+        // Calculate additional metrics
+        const metrics = {
+          averageResponseTime: calculateAverageResponseTime(data.reviews),
+          userSatisfactionScore: calculateUserSatisfactionScore(distributions.sentiment),
+          featureAdoptionRate: calculateFeatureAdoptionRate(data.reviews),
+          bugReportRate: calculateBugReportRate(data.reviews),
+          userRetentionScore: calculateUserRetentionScore(data.reviews)
+        };
 
-          // Create sentiment distribution from pain points and positive feedback
-          const painPointCount = Array.isArray(summary.pain_points) ? summary.pain_points.length : 0;
-          const featureRequestCount = Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0;
-          const positiveCount = Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0;
-          const priorityCount = Array.isArray(summary.suggested_priorities) ? summary.suggested_priorities.length : 0;
-
-          // Create synthetic distributions for visualization
-          Object.assign(sentimentDistribution, {
-            positive: positiveCount,
-            neutral: featureRequestCount + priorityCount,
-            negative: painPointCount
-          });
-
-          // Create classification distribution
-          Object.assign(classificationDistribution, {
-            pain_point: painPointCount,
-            feature_request: featureRequestCount,
-            positive_feedback: positiveCount,
-            suggested_priority: priorityCount
-          });
-
-          // Create keyword distribution from all points
-          // Use a more efficient approach for keyword extraction
-          const allPoints = [];
-
-          // Only process arrays to avoid errors
-          if (Array.isArray(summary.pain_points)) {
-            summary.pain_points.forEach(point => {
-              if (point && typeof point === 'object' && point.text) {
-                allPoints.push(point.text);
-              } else if (typeof point === 'string') {
-                allPoints.push(point);
-              }
-            });
+        // Prepare chart data with enhanced metrics
+        const chartData = {
+          sentimentData: prepareChartData(distributions.sentiment),
+          classificationData: prepareChartData(distributions.classification),
+          gameData: prepareChartData(distributions.game, 8),
+          keywordData: prepareChartData(distributions.keywords, 15),
+          timeBasedData: prepareTimeBasedData(distributions.timeBased),
+          userSegmentData: prepareUserSegmentData(distributions.userSegments),
+          featureRequestData: prepareFeatureRequestData(distributions.featureRequests),
+          painPointData: preparePainPointData(distributions.painPoints),
+          metrics: metrics,
+          summary: {
+            ...summary,
+            total_reviews: data.reviews ? data.reviews.length : calculateTotalReviews(distributions.sentiment),
+            average_sentiment: summary.average_sentiment || calculateAverageSentiment(distributions.sentiment),
+            sentiment_distribution: distributions.sentiment,
+            classification_distribution: distributions.classification,
+            game_distribution: distributions.game,
+            top_keywords: distributions.keywords,
+            time_based_distribution: distributions.timeBased,
+            user_segments: distributions.userSegments,
+            feature_requests: distributions.featureRequests,
+            pain_points: distributions.painPoints
           }
+        };
 
-          if (Array.isArray(summary.feature_requests)) {
-            summary.feature_requests.forEach(point => {
-              if (point && typeof point === 'object' && point.text) {
-                allPoints.push(point.text);
-              } else if (typeof point === 'string') {
-                allPoints.push(point);
-              }
-            });
-          }
+        setChartData(chartData);
+      } catch (error) {
+        console.error('Error processing visualization data:', error);
+        setDefaultChartData();
+      }
+    }
+  }, [data, timeRange, selectedGame]);
 
-          if (Array.isArray(summary.positive_feedback)) {
-            summary.positive_feedback.forEach(point => {
-              if (point && typeof point === 'object' && point.text) {
-                allPoints.push(point.text);
-              } else if (typeof point === 'string') {
-                allPoints.push(point);
-              }
-            });
-          }
+  // Helper functions for new metrics
+  const calculateAverageResponseTime = (reviews) => {
+    if (!Array.isArray(reviews)) return 0;
+    const responseTimes = reviews
+      .filter(review => review.response_time)
+      .map(review => review.response_time);
+    return responseTimes.length > 0
+      ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+      : 0;
+  };
 
-          if (Array.isArray(summary.suggested_priorities)) {
-            summary.suggested_priorities.forEach(point => {
-              if (point && typeof point === 'object' && point.text) {
-                allPoints.push(point.text);
-              } else if (typeof point === 'string') {
-                allPoints.push(point);
-              }
-            });
-          }
+  const calculateUserSatisfactionScore = (sentimentDistribution) => {
+    const total = Object.values(sentimentDistribution).reduce((a, b) => a + b, 0);
+    if (total === 0) return 0;
+    const positiveWeight = sentimentDistribution.positive || 0;
+    const neutralWeight = (sentimentDistribution.neutral || 0) * 0.5;
+    return ((positiveWeight + neutralWeight) / total) * 100;
+  };
 
-          // Extract keywords more efficiently
-          const wordCounts = {};
-          allPoints.forEach(point => {
-            if (typeof point === 'string') {
-              // Use a more efficient regex to split and filter words
-              const words = point.toLowerCase().match(/\b\w{5,}\b/g) || [];
-              words.forEach(word => {
-                wordCounts[word] = (wordCounts[word] || 0) + 1;
-              });
-            }
-          });
+  const calculateFeatureAdoptionRate = (reviews) => {
+    if (!Array.isArray(reviews)) return 0;
+    const featureMentions = reviews.filter(review => 
+      review.classification === 'feature_request' || 
+      review.classification === 'positive_feedback'
+    ).length;
+    return (featureMentions / reviews.length) * 100;
+  };
 
-          // Only keep the top 20 keywords for better performance
-          Object.entries(wordCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 20)
-            .forEach(([word, count]) => {
-              topKeywords[word] = count;
-            });
-        }
+  const calculateBugReportRate = (reviews) => {
+    if (!Array.isArray(reviews)) return 0;
+    const bugReports = reviews.filter(review => 
+      review.classification === 'bug_report' || 
+      review.classification === 'pain_point'
+    ).length;
+    return (bugReports / reviews.length) * 100;
+  };
 
-        // Prepare data for charts more efficiently
-        // Use memoization to avoid unnecessary recalculations
+  const calculateUserRetentionScore = (reviews) => {
+    if (!Array.isArray(reviews)) return 0;
+    const returningUsers = reviews.filter(review => review.is_returning_user).length;
+    return (returningUsers / reviews.length) * 100;
+  };
 
-        // Prepare sentiment data for pie chart - only include non-zero values
-        const sentimentData = Object.entries(sentimentDistribution)
-          .filter(([_, value]) => value > 0)
-          .map(([name, value]) => ({
-            name: name.charAt(0).toUpperCase() + name.slice(1),
+  // New helper functions for data preparation
+  const prepareTimeBasedData = (timeBasedDistribution) => {
+    return Object.entries(timeBasedDistribution || {}).map(([time, value]) => ({
+      time,
+      value
+    }));
+  };
+
+  const prepareUserSegmentData = (userSegments) => {
+    return Object.entries(userSegments || {}).map(([segment, value]) => ({
+      segment,
+      value
+    }));
+  };
+
+  const prepareFeatureRequestData = (featureRequests) => {
+    return Object.entries(featureRequests || {}).map(([feature, value]) => ({
+      feature,
+      value
+    }));
+  };
+
+  const preparePainPointData = (painPoints) => {
+    return Object.entries(painPoints || {}).map(([point, value]) => ({
+      point,
             value
           }));
+  };
 
-        // Prepare classification data for bar chart - only include non-zero values
-        const classificationData = Object.entries(classificationDistribution)
+  // Helper function to prepare chart data
+  const prepareChartData = (distribution, limit = null) => {
+    const data = Object.entries(distribution)
           .filter(([_, value]) => value > 0)
           .map(([name, value]) => ({
             name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
             value
           }));
 
-        // Prepare game distribution data - limit to top 8 for better performance
-        const gameData = Object.entries(gameDistribution)
-          .filter(([_, value]) => value > 0)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8)
-          .map(([name, value]) => ({
-            name,
-            value
-          }));
+    return limit ? data.sort((a, b) => b.value - a.value).slice(0, limit) : data;
+  };
 
-        // Prepare keyword data - limit to top 8 for better performance
-        const keywordData = Object.entries(topKeywords)
-          .filter(([_, value]) => value > 0)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 8)
-          .map(([keyword, count]) => ({
-            name: keyword,
-            value: count
-          }));
+  // Helper function to calculate total reviews
+  const calculateTotalReviews = (sentimentDistribution) => {
+    return Object.values(sentimentDistribution).reduce((sum, val) => sum + val, 0);
+  };
 
-        // Calculate total reviews more efficiently
-        let totalReviews = summary.total_reviews || 0;
+  // Helper function to calculate average sentiment
+  const calculateAverageSentiment = (sentimentDistribution) => {
+    const weights = { positive: 1.0, neutral: 0.5, negative: 0.0 };
+    const totalSentiment = Object.entries(sentimentDistribution)
+      .reduce((sum, [key, val]) => sum + (weights[key] || 0.5) * val, 0);
+    const totalItems = calculateTotalReviews(sentimentDistribution);
+    return totalItems > 0 ? totalSentiment / totalItems : 0.5;
+  };
 
-        // If total_reviews is not provided, calculate it from the available data
-        if (!totalReviews) {
-          // First try to get it from the sentiment distribution
-          const sentimentTotal = Object.values(sentimentDistribution).reduce((sum, val) => sum + val, 0);
-          if (sentimentTotal > 0) {
-            totalReviews = sentimentTotal;
-          } else {
-            // Fall back to counting items in arrays
-            totalReviews = (Array.isArray(summary.pain_points) ? summary.pain_points.length : 0) +
-                          (Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0) +
-                          (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0) +
-                          (Array.isArray(summary.suggested_priorities) ? summary.suggested_priorities.length : 0);
-          }
-        }
-
-        // Calculate average sentiment more efficiently
-        let avgSentiment = summary.average_sentiment || 0;
-
-        // If average_sentiment is not provided, calculate it from the sentiment distribution
-        if (!avgSentiment && Object.keys(sentimentDistribution).length > 0) {
-          const totalSentiment =
-            (sentimentDistribution.positive || 0) * 1.0 +
-            (sentimentDistribution.neutral || 0) * 0.5 +
-            (sentimentDistribution.negative || 0) * 0.0;
-
-          const totalItems = Object.values(sentimentDistribution).reduce((sum, val) => sum + val, 0);
-
-          if (totalItems > 0) {
-            avgSentiment = totalSentiment / totalItems;
-          } else {
-            avgSentiment = 0.5; // Default to neutral
-          }
-        }
-
-        // Make sure summary has all required properties for the UI
-        const enhancedSummary = {
-          ...summary,
-          // Ensure these properties exist with default values if missing
-          total_reviews: totalReviews,
-          average_sentiment: avgSentiment,
-          sentiment_distribution: sentimentDistribution,
-          classification_distribution: classificationDistribution,
-          game_distribution: summary.game_distribution || gameDistribution,
-          top_keywords: summary.top_keywords || topKeywords
-        };
-
-        // Update chart data state
-        setChartData({
-          sentimentData,
-          classificationData,
-          gameData,
-          keywordData,
-          summary: enhancedSummary
-        });
-      } catch (error) {
-        console.error('Error processing visualization data:', error);
-        // Set minimal chart data to prevent rendering errors
+  // Helper function to set default chart data
+  const setDefaultChartData = () => {
         setChartData({
           sentimentData: [],
           classificationData: [],
           gameData: [],
           keywordData: [],
+      timeBasedData: [],
+      userSegmentData: [],
+      featureRequestData: [],
+      painPointData: [],
+      metrics: {
+        averageResponseTime: 0,
+        userSatisfactionScore: 0,
+        featureAdoptionRate: 0,
+        bugReportRate: 0,
+        userRetentionScore: 0
+      },
           summary: {
             total_reviews: 0,
             average_sentiment: 0,
+        sentiment_distribution: {},
+        classification_distribution: {},
             game_distribution: {},
-            top_keywords: {}
-          }
-        });
+        top_keywords: {},
+        time_based_distribution: {},
+        user_segments: {},
+        feature_requests: {},
+        pain_points: {}
       }
-    }
-  }, [data]);
+    });
+  };
 
   if (!chartData) return null;
 
-  const { sentimentData, classificationData, gameData, keywordData, summary } = chartData;
+  const { sentimentData, classificationData, gameData, keywordData, timeBasedData, userSegmentData, featureRequestData, painPointData, metrics, summary } = chartData;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -335,9 +287,37 @@ const DataVisualization = ({ data }) => {
       initial="hidden"
       animate="visible"
     >
+      {/* Filters */}
+      <div className="flex space-x-4 mb-6">
+        <select
+          value={timeRange}
+          onChange={(e) => setTimeRange(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Time</option>
+          <option value="week">Last Week</option>
+          <option value="month">Last Month</option>
+          <option value="quarter">Last Quarter</option>
+          <option value="year">Last Year</option>
+        </select>
+
+        <select
+          value={selectedGame}
+          onChange={(e) => setSelectedGame(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Games</option>
+          {gameData.map((game) => (
+            <option key={game.name} value={game.name}>
+              {game.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Navigation Tabs */}
       <div className="flex space-x-4 mb-6">
-        {['overview', 'sentiment', 'classification', 'games', 'keywords'].map((tab) => (
+        {['overview', 'sentiment', 'classification', 'games', 'keywords', 'trends', 'segments'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -359,12 +339,12 @@ const DataVisualization = ({ data }) => {
             variants={itemVariants}
             className="grid grid-cols-1 md:grid-cols-2 gap-8"
           >
-            {/* Summary Statistics */}
+            {/* Enhanced Summary Statistics */}
             <motion.div
               className="bg-white rounded-lg shadow-lg p-6 col-span-2"
               variants={itemVariants}
             >
-              <h3 className="text-xl font-semibold mb-6">Summary Statistics</h3>
+              <h3 className="text-xl font-semibold mb-6">Key Metrics</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <motion.div
                   className="text-center p-4 bg-blue-50 rounded-lg"
@@ -381,12 +361,12 @@ const DataVisualization = ({ data }) => {
                 >
                   <p className="text-3xl font-bold text-green-600">
                     <AnimatedNumber
-                      value={summary.average_sentiment * 100}
+                      value={metrics.userSatisfactionScore}
                       suffix="%"
                       duration={2}
                     />
                   </p>
-                  <p className="text-gray-600 mt-2">Average Sentiment</p>
+                  <p className="text-gray-600 mt-2">User Satisfaction</p>
                 </motion.div>
                 <motion.div
                   className="text-center p-4 bg-purple-50 rounded-lg"
@@ -394,10 +374,12 @@ const DataVisualization = ({ data }) => {
                 >
                   <p className="text-3xl font-bold text-purple-600">
                     <AnimatedNumber
-                      value={Object.keys(summary.game_distribution).length}
+                      value={metrics.featureAdoptionRate}
+                      suffix="%"
+                      duration={2}
                     />
                   </p>
-                  <p className="text-gray-600 mt-2">Games Analyzed</p>
+                  <p className="text-gray-600 mt-2">Feature Adoption</p>
                 </motion.div>
                 <motion.div
                   className="text-center p-4 bg-orange-50 rounded-lg"
@@ -405,11 +387,40 @@ const DataVisualization = ({ data }) => {
                 >
                   <p className="text-3xl font-bold text-orange-600">
                     <AnimatedNumber
-                      value={Object.keys(summary.top_keywords).length}
+                      value={metrics.userRetentionScore}
+                      suffix="%"
+                      duration={2}
                     />
                   </p>
-                  <p className="text-gray-600 mt-2">Unique Keywords</p>
+                  <p className="text-gray-600 mt-2">User Retention</p>
                 </motion.div>
+              </div>
+            </motion.div>
+
+            {/* Additional Metrics */}
+            <motion.div
+              className="bg-white rounded-lg shadow-lg p-6"
+              variants={itemVariants}
+            >
+              <h3 className="text-xl font-semibold mb-6">Response Time Analysis</h3>
+              <div className="text-center">
+                <p className="text-4xl font-bold text-blue-600">
+                  {metrics.averageResponseTime.toFixed(1)}h
+                </p>
+                <p className="text-gray-600 mt-2">Average Response Time</p>
+              </div>
+            </motion.div>
+
+            <motion.div
+              className="bg-white rounded-lg shadow-lg p-6"
+              variants={itemVariants}
+            >
+              <h3 className="text-xl font-semibold mb-6">Bug Report Rate</h3>
+              <div className="text-center">
+                <p className="text-4xl font-bold text-red-600">
+                  {metrics.bugReportRate.toFixed(1)}%
+                </p>
+                <p className="text-gray-600 mt-2">Bug Reports</p>
               </div>
             </motion.div>
           </motion.div>
@@ -531,6 +542,61 @@ const DataVisualization = ({ data }) => {
                 />
               </BarChart>
             </ResponsiveContainer>
+          </motion.div>
+        )}
+
+        {/* New Trends Tab */}
+        {activeTab === 'trends' && (
+          <motion.div
+            key="trends"
+            variants={itemVariants}
+            className="space-y-6"
+          >
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <h3 className="text-xl font-semibold mb-6">Time-Based Trends</h3>
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={timeBasedData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line type="monotone" dataKey="value" stroke="#8884d8" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+        )}
+
+        {/* New Segments Tab */}
+        {activeTab === 'segments' && (
+          <motion.div
+            key="segments"
+            variants={itemVariants}
+            className="space-y-6"
+          >
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <h3 className="text-xl font-semibold mb-6">User Segments</h3>
+              <ResponsiveContainer width="100%" height={400}>
+                <PieChart>
+                  <Pie
+                    data={userSegmentData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                    outerRadius={150}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {userSegmentData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

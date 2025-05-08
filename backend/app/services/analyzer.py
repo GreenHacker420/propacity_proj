@@ -307,6 +307,46 @@ class TextAnalyzer:
 
         return sentiment_score, sentiment_label
 
+    def categorize_reviews(self, reviews: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Categorize reviews into pain points, feature requests, and positive feedback.
+
+        Args:
+            reviews: List of review dictionaries with text and sentiment analysis
+
+        Returns:
+            List of categorized reviews with updated category field
+        """
+        categorized_reviews = []
+        for review in reviews:
+            # Get the text and clean it
+            text = review.get('text', '')
+            cleaned_text = self.clean_text(text)
+
+            # Get sentiment score and label
+            sentiment_score = review.get('sentiment_score', 0.5)
+            sentiment_label = review.get('sentiment_label', 'NEUTRAL')
+
+            # Determine category based on sentiment and keywords
+            if sentiment_score < 0.4:  # Negative sentiment
+                category = "pain_point"
+            elif any(keyword in cleaned_text for keyword in self.feature_request_keywords):
+                category = "feature_request"
+            elif sentiment_score > 0.6:  # Positive sentiment
+                category = "positive_feedback"
+            else:
+                # Default to positive feedback for neutral sentiment
+                category = "positive_feedback"
+
+            # Create categorized review
+            categorized_review = {
+                **review,
+                'category': category
+            }
+            categorized_reviews.append(categorized_review)
+
+        return categorized_reviews
+
     def analyze_texts_batch(self, texts: List[str], metadata_list: Optional[List[Dict[str, Any]]] = None) -> List[Dict]:
         """
         Analyze multiple texts in batch for more efficient processing.

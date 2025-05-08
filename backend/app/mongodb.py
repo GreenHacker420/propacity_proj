@@ -5,7 +5,6 @@ This module provides functions to connect to MongoDB Atlas and access collection
 
 import os
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 from dotenv import load_dotenv
 import logging
 from typing import Optional, Dict, Any
@@ -42,39 +41,62 @@ async def init_mongodb() -> bool:
         if not MONGODB_URI.startswith(('mongodb://', 'mongodb+srv://')):
             raise ValueError("Invalid MongoDB URI format")
 
+        # Get client (this will handle connection errors and fallbacks)
         client = get_client()
 
         # Test connection with timeout
-        client.admin.command('ping', serverSelectionTimeoutMS=5000)
+        client.admin.command('ping', serverSelectionTimeoutMS=10000)
         logger.info("MongoDB connection initialized successfully")
 
-        # Initialize collections if they don't exist
-        db = get_database()
-        collections = db.list_collection_names()
+        # Check if we're using a mock client in development mode
+        if os.getenv("DEVELOPMENT_MODE", "").lower() == "true" and hasattr(client, '_mock_obj'):
+            logger.warning("Using mock MongoDB client - skipping collection initialization")
+            return True
 
-        required_collections = [
-            "users",
-            "reviews",
-            "keywords",
-            "analysis_history",
-            "weekly_summaries",
-            "processing_times"
-        ]
+        try:
+            # Initialize collections if they don't exist
+            db = get_database()
+            collections = db.list_collection_names()
 
-        for collection in required_collections:
-            if collection not in collections:
-                db.create_collection(collection)
-                logger.info(f"Created collection: {collection}")
+            required_collections = [
+                "users",
+                "reviews",
+                "keywords",
+                "analysis_history",
+                "weekly_summaries",
+                "processing_times"
+            ]
+
+            for collection in required_collections:
+                if collection not in collections:
+                    db.create_collection(collection)
+                    logger.info(f"Created collection: {collection}")
+                else:
+                    logger.debug(f"Collection already exists: {collection}")
+
+            # Verify database access
+            db_stats = db.command("dbStats")
+            logger.info(f"Database stats: {db_stats}")
+        except Exception as collection_error:
+            # If we're in development mode, we can continue even if collection setup fails
+            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+                logger.warning(f"Failed to initialize collections: {str(collection_error)}")
+                logger.warning("Continuing in development mode with limited functionality")
+                return True
             else:
-                logger.debug(f"Collection already exists: {collection}")
-
-        # Verify database access
-        db_stats = db.command("dbStats")
-        logger.info(f"Database stats: {db_stats}")
+                # In production, we need to fail if collection setup fails
+                raise
 
         return True
     except Exception as e:
         logger.error(f"Failed to initialize MongoDB: {str(e)}")
+
+        # In development mode, we can continue even if MongoDB initialization fails
+        if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+            logger.warning("Continuing in development mode with limited functionality")
+            return True
+
+        # In production, we need to fail if MongoDB initialization fails
         raise
 
 def get_client() -> MongoClient:
@@ -89,20 +111,69 @@ def get_client() -> MongoClient:
             if not uri:
                 raise ValueError("MONGODB_URI environment variable is not set")
 
-            # Configure client with SSL settings
-            _client = MongoClient(
-                uri,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000,
-                tlsInsecure=True  # Use only tlsInsecure for development
-            )
+            # Log connection attempt (without sensitive info)
+            logger.info("Attempting to connect to MongoDB Atlas...")
+            if '@' in uri:
+                # Hide username and password in logs
+                parts = uri.split('@')
+                logger.info(f"Connection string format: {parts[1]}")
+            else:
+                logger.info("Connection string format: Invalid format")
 
-            # Test the connection
-            _client.admin.command('ping')
-            logger.info("Successfully connected to MongoDB Atlas")
+            # Log platform information
+            import platform
+            logger.info(f"Platform: {platform.system()} {platform.release()}")
+            logger.info(f"Python version: {platform.python_version()}")
+
+            # Try to create the client with appropriate settings
+            try:
+                # Use standard configuration
+                _client = MongoClient(
+                    uri,
+                    connectTimeoutMS=30000,
+                    serverSelectionTimeoutMS=30000,
+                    socketTimeoutMS=30000
+                )
+
+                # Test the connection
+                _client.admin.command('ping')
+                logger.info("Successfully connected to MongoDB Atlas")
+            except Exception as e:
+                logger.warning(f"MongoDB connection failed: {str(e)}")
+
+                # If in development mode, create a mock client
+                if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+                    logger.warning("Creating mock MongoDB client for development mode")
+                    from unittest.mock import MagicMock
+                    _client = MagicMock()
+                    logger.warning("Created mock MongoDB client")
+                    return _client
+                else:
+                    # In production, we need to fail
+                    raise
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {str(e)}")
+            logger.error(f"Connection error type: {type(e).__name__}")
+            if hasattr(e, 'args'):
+                logger.error(f"Error args: {e.args}")
+
+            # If in development mode, create a mock client
+            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+                logger.warning("Creating mock MongoDB client for development mode")
+                try:
+                    # Try to create a local MongoDB client as fallback
+                    logger.info("Attempting to connect to local MongoDB...")
+                    _client = MongoClient("mongodb://localhost:27017/")
+                    _client.admin.command('ping')
+                    logger.info("Successfully connected to local MongoDB")
+                    return _client
+                except Exception as local_e:
+                    logger.warning(f"Failed to connect to local MongoDB: {str(local_e)}")
+                    # Create a mock client as last resort
+                    from unittest.mock import MagicMock
+                    _client = MagicMock()
+                    logger.warning("Created mock MongoDB client")
+                    return _client
             raise
     return _client
 
