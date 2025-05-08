@@ -161,7 +161,7 @@ sudo apt install -y nginx
 sudo tee /etc/nginx/sites-available/propacity_proj << EOL
 server {
     listen 80;
-    server_name 3.6.112.222;  # Replace with your domain or EC2 public IP
+    server_name 13.62.6.5;  # Replace with your domain or EC2 public IP
 
     location / {
         proxy_pass http://localhost:8000;
