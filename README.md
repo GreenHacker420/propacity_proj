@@ -73,6 +73,7 @@ product-review-analyzer/
 │   │   └── utils/        # Utilities and exceptions
 │   ├── download_nltk_resources.py  # NLTK setup script
 │   ├── requirements.txt  # Python dependencies
+│   ├── requirements.aws.txt  # AWS-specific dependencies
 │   └── main.py           # FastAPI application entry
 ├── frontend/             # React frontend
 │   ├── src/
@@ -89,11 +90,20 @@ product-review-analyzer/
 ├── docs/                 # Documentation
 │   ├── api/              # API documentation
 │   ├── deployment/       # Deployment guides
+│   │   ├── aws.md        # AWS deployment guide
+│   │   └── railway.md    # Railway deployment guide
 │   ├── features/         # Feature documentation
 │   └── troubleshooting/  # Troubleshooting guides
 ├── scripts/              # Deployment and setup scripts
 │   ├── aws/              # AWS deployment scripts
+│   │   ├── build.sh      # AWS build script
+│   │   ├── deploy_aws.sh # AWS deployment script
+│   │   ├── setup_aws.sh  # AWS setup script
+│   │   ├── install_aws_deps.sh # AWS dependencies installer
+│   │   └── build_frontend_aws.sh # AWS frontend build script
 │   └── build.sh          # Production build script
+├── serve.py              # Production server script
+├── start.sh              # Production startup script
 ├── package.json          # Root package.json with scripts
 └── README.md             # Project documentation
 ```
@@ -125,21 +135,31 @@ npm run dev
 For production deployment on AWS:
 
 1. Configure your AWS credentials and EC2 instance
-2. Run the AWS setup script:
+2. Build the application for production:
 ```bash
-cd scripts/aws
-./setup_aws.sh -h <EC2_HOST> -k <PEM_FILE>
+# Make the build script executable
+chmod +x scripts/aws/build.sh
+
+# Run the build script
+./scripts/aws/build.sh
 ```
 
-3. Build the production version:
+3. Deploy to AWS:
 ```bash
-./build.sh
+# Make the deployment script executable
+chmod +x scripts/aws/deploy_aws.sh
+
+# Deploy to AWS
+./scripts/aws/deploy_aws.sh -h <EC2_HOST> -k <PEM_FILE>
 ```
 
-4. Deploy to AWS:
-```bash
-./deploy_aws.sh -h <EC2_HOST> -k <PEM_FILE>
-```
+The deployment script will:
+- Package your application
+- Upload it to your EC2 instance
+- Install all dependencies
+- Configure Nginx as a reverse proxy
+- Set up a systemd service for the application
+- Start the application
 
 For detailed AWS deployment instructions, see the [AWS Deployment Guide](docs/deployment/aws.md).
 
@@ -260,6 +280,13 @@ npm run dev
 - `ENABLE_WEBSOCKETS` - Enable WebSocket support (default: True)
 - `PARALLEL_PROCESSING` - Enable parallel processing (default: True)
 - `MAX_WORKERS` - Maximum number of worker threads for parallel processing (default: 4)
+
+### Production Variables
+- `DEVELOPMENT_MODE` - Set to `false` for production environments (default: True)
+- `FRONTEND_URL` - URL of the frontend for CORS configuration (default: varies by environment)
+- `LOG_LEVEL` - Logging level (default: INFO)
+- `GUNICORN_WORKERS` - Number of Gunicorn workers for production (default: 4)
+- `GUNICORN_TIMEOUT` - Timeout for Gunicorn workers in seconds (default: 120)
 
 ## API Documentation
 
