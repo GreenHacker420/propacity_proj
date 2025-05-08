@@ -1,4 +1,4 @@
-# AWS Deployment Guide
+`# AWS Deployment Guide
 
 This guide provides detailed instructions for deploying the Product Review Analyzer on Amazon Web Services (AWS).
 
@@ -158,10 +158,10 @@ cd ..
 sudo apt install -y nginx
 
 # Create Nginx configuration
-sudo tee /etc/nginx/sites-available/product-review-analyzer << EOL
+sudo tee /etc/nginx/sites-available/propacity_proj << EOL
 server {
     listen 80;
-    server_name your-domain.com;  # Replace with your domain or EC2 public IP
+    server_name 3.6.112.222;  # Replace with your domain or EC2 public IP
 
     location / {
         proxy_pass http://localhost:8000;
@@ -175,7 +175,7 @@ server {
 EOL
 
 # Enable the site
-sudo ln -s /etc/nginx/sites-available/product-review-analyzer /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/propacity_proj /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
 ```
@@ -184,25 +184,25 @@ sudo systemctl restart nginx
 
 ```bash
 # Create a systemd service file
-sudo tee /etc/systemd/system/product-review-analyzer.service << EOL
+sudo tee /etc/systemd/system/propacity_proj.service << EOL
 [Unit]
 Description=Product Review Analyzer
 After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/product-review-analyzer
-ExecStart=/home/ubuntu/product-review-analyzer/venv/bin/python serve.py
+WorkingDirectory=/home/ubuntu/propacity_proj
+ExecStart=/home/ubuntu/propacity_proj/venv/bin/python serve.py
 Restart=always
-Environment="PYTHONPATH=/home/ubuntu/product-review-analyzer:/home/ubuntu/product-review-analyzer/backend"
+Environment="PYTHONPATH=/home/ubuntu/propacity_proj:/home/ubuntu/propacity_proj/backend"
 
 [Install]
 WantedBy=multi-user.target
 EOL
 
 # Enable and start the service
-sudo systemctl enable product-review-analyzer
-sudo systemctl start product-review-analyzer
+sudo systemctl enable propacity_proj
+sudo systemctl start propacity_proj
 ```
 
 ## Docker on EC2 Deployment
@@ -380,12 +380,12 @@ chmod +x /home/ubuntu/backup.sh
 
      a) Use the enhanced build script that tries multiple approaches:
      ```bash
-     ./build_frontend_aws.sh
+     ./scripts/aws/build_frontend_aws.sh
      ```
 
      b) If that fails, use the Vite fix script that updates package.json with compatible versions:
      ```bash
-     ./fix_vite_build.sh
+     ./scripts/aws/fix_vite_build.sh
      ```
 
      c) For manual fixing:
@@ -402,7 +402,7 @@ chmod +x /home/ubuntu/backup.sh
    - If you encounter errors like `error: command '/usr/bin/x86_64-linux-gnu-g++' failed with exit code 1` when installing packages like `cchardet`
    - Solution: Use the provided installation script that includes fallbacks:
      ```bash
-     ./install_aws_deps.sh
+     ./scripts/aws/install_aws_deps.sh
      ```
    - For specific package issues:
      - For `cchardet`: Use `charset-normalizer` as an alternative

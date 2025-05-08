@@ -105,10 +105,35 @@ NODE_ENV=production npm run build
 if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
     echo -e "${GREEN}Frontend build successful!${NC}"
 else
-    echo -e "${YELLOW}Warning: Frontend build directory is empty or does not exist.${NC}"
-    echo "Creating minimal dist directory..."
-    mkdir -p dist
-    echo "<html><body><h1>Product Review Analyzer</h1><p>Frontend build failed. Please check the logs.</p></body></html>" > dist/index.html
+    echo -e "${YELLOW}Warning: Frontend build failed. Trying alternative build method...${NC}"
+
+    # Check if fix_vite_build.sh exists in the parent directory
+    if [ -f "../scripts/aws/fix_vite_build.sh" ]; then
+        echo "Using fix_vite_build.sh script..."
+        chmod +x ../scripts/aws/fix_vite_build.sh
+        ../scripts/aws/fix_vite_build.sh
+    else
+        echo "fix_vite_build.sh not found, trying direct fix..."
+
+        # Try to fix Vite issues directly
+        echo "Cleaning node_modules..."
+        rm -rf node_modules
+        rm -f package-lock.json
+
+        echo "Installing specific Vite version..."
+        npm install
+        npm install vite@4.5.0 --save-dev
+
+        echo "Trying build again with specific Vite version..."
+        NODE_ENV=production npx vite build
+
+        # If still not successful, create minimal dist directory
+        if [ ! -d "dist" ] || [ ! "$(ls -A dist)" ]; then
+            echo "Creating minimal dist directory..."
+            mkdir -p dist
+            echo "<html><body><h1>Product Review Analyzer</h1><p>Frontend build failed. Please check the logs.</p></body></html>" > dist/index.html
+        fi
+    fi
 fi
 
 cd ..

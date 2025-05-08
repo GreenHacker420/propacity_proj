@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to build the frontend for AWS deployment with fallbacks
+# Script to fix Vite build issues on AWS
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -7,74 +7,37 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== Building frontend for AWS deployment ===${NC}"
+echo -e "${GREEN}=== Fixing Vite build issues ===${NC}"
 
 # Navigate to frontend directory
 cd frontend
 
-# Create .env file for production
-echo -e "\n${GREEN}=== Creating .env file for production ===${NC}"
-cat > .env << EOL
-VITE_API_URL=/api
-EOL
+# Create a package.json backup
+echo "Creating package.json backup..."
+cp package.json package.json.bak
 
-echo "Created .env file with content:"
-cat .env
-
-# Install dependencies if node_modules doesn't exist
-if [ ! -d "node_modules" ]; then
-    echo -e "\n${GREEN}=== Installing dependencies ===${NC}"
-    npm install
+# Update package.json to use a specific Vite version
+echo "Updating package.json to use a specific Vite version..."
+if command -v jq &> /dev/null; then
+    # If jq is available, use it to update package.json
+    jq '.devDependencies.vite = "4.5.0"' package.json > package.json.tmp && mv package.json.tmp package.json
 else
-    echo -e "\n${GREEN}=== Dependencies already installed ===${NC}"
+    # Otherwise, use sed (less reliable but should work for simple cases)
+    sed -i 's/"vite": ".*"/"vite": "4.5.0"/g' package.json
 fi
 
-# Build the frontend
-echo -e "\n${GREEN}=== Building frontend ===${NC}"
+# Clean node_modules and reinstall
+echo "Cleaning node_modules..."
+rm -rf node_modules
+rm -f package-lock.json
 
-# Try different build approaches
-echo "Attempting to build with npx vite build..."
-NODE_ENV=production npx vite build
+# Reinstall dependencies
+echo "Reinstalling dependencies..."
+npm install
 
-# If the first approach fails, try the second approach
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}First build approach failed, trying alternative method...${NC}"
-    # Clean node_modules and reinstall
-    echo "Cleaning node_modules..."
-    rm -rf node_modules
-    rm -f package-lock.json
-
-    echo "Reinstalling dependencies with specific vite version..."
-    npm install
-    npm install vite@4.5.0 --save-dev
-
-    echo "Building with explicit vite path..."
-    NODE_ENV=production ./node_modules/.bin/vite build
-fi
-
-# If the second approach fails, try with a direct vite installation
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}Second build approach failed, trying with direct vite installation...${NC}"
-
-    # Install vite globally
-    echo "Installing vite globally..."
-    npm install -g vite@4.5.0
-
-    echo "Building with global vite..."
-    NODE_ENV=production vite build
-fi
-
-# If the second approach fails, try a direct build with Node.js
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}Second build approach failed, trying direct build with Node.js...${NC}"
-
-    # Check if the direct build script exists
-    if [ -f "build_direct.js" ]; then
-        echo "Using direct build script..."
-        NODE_ENV=production node build_direct.js
-    else
-        echo "Creating direct build script..."
-        cat > build_direct.js << EOL
+# Create a direct build script
+echo "Creating direct build script..."
+cat > build_direct.js << EOL
 // Direct build script for Vite
 // This script directly uses the Vite API to build the project
 // without relying on the CLI which can have path issues
@@ -126,16 +89,18 @@ try {
   });
 }
 EOL
-        NODE_ENV=production node build_direct.js
-    fi
-fi
 
-# If all build approaches fail, try a minimal build
-if [ $? -ne 0 ]; then
-    echo -e "${YELLOW}All build approaches failed, creating minimal build...${NC}"
+# Run the direct build script
+echo "Running direct build script..."
+NODE_ENV=production node build_direct.js
 
-    # Create a minimal dist directory with a placeholder
-    echo "Creating minimal dist directory..."
+# Check if build was successful
+if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+    echo -e "\n${GREEN}=== Build successful! ===${NC}"
+    echo "Build files are in the dist directory"
+else
+    echo -e "\n${RED}=== Build failed ===${NC}"
+    echo "Creating minimal dist directory as fallback..."
     mkdir -p dist
     cat > dist/index.html << EOL
 <!DOCTYPE html>
@@ -201,17 +166,7 @@ EOL
     echo "Created minimal index.html as a fallback"
 fi
 
-# Check if build was successful
-if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
-    echo -e "\n${GREEN}=== Frontend build completed ===${NC}"
-    echo "Build files are in the dist directory"
-else
-    echo -e "\n${RED}=== Frontend build failed ===${NC}"
-    echo "Please check the logs for more information"
-    exit 1
-fi
-
 # Return to the original directory
 cd ..
 
-echo -e "\n${GREEN}=== Frontend build process completed ===${NC}"
+echo -e "\n${GREEN}=== Vite build fix process completed ===${NC}"
