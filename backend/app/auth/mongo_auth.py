@@ -11,6 +11,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
+import logging
 
 from ..mongodb import get_collection
 from ..models.mongo_models import MongoUser
@@ -169,3 +170,29 @@ def create_user(username: str, email: str, password: str, is_admin: bool = False
     user["_id"] = result.inserted_id
 
     return user
+
+def init_test_user():
+    """Initialize a test user for development"""
+    users_collection = get_collection("users")
+    test_user = users_collection.find_one({"username": "test_user"})
+    
+    if not test_user:
+        # Create test user
+        hashed_password = get_password_hash("test_password")
+        user = {
+            "username": "test_user",
+            "email": "test@example.com",
+            "hashed_password": hashed_password,
+            "is_active": True,
+            "is_admin": False,
+            "created_at": datetime.now()
+        }
+        result = users_collection.insert_one(user)
+        user["_id"] = result.inserted_id
+        logging.info("Test user created successfully")
+    else:
+        logging.info("Test user already exists")
+
+# Initialize test user in development mode
+if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+    init_test_user()

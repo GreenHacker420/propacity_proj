@@ -20,6 +20,24 @@ let apiStatus = {
 // Authentication is disabled for now
 // No request interceptor for authentication
 
+// Add request interceptor for authentication
+axios.interceptors.request.use(
+  config => {
+    const token = getToken();
+    // console.log('Auth token:', token); // Debug log
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+      // console.log('Request headers:', config.headers); // Debug log
+    } else {
+      // console.warn('No auth token found'); // Debug log
+    }
+    return config;
+  },
+  error => {
+    return Promise.reject(error);
+  }
+);
+
 // Intercept responses to track API status
 axios.interceptors.response.use(
   response => {

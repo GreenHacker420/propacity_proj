@@ -36,24 +36,9 @@ export const isAuthenticated = () => {
   return getToken() !== null;
 };
 
-/**
- * Get a mock token for development
- * @returns {string} A mock token
- */
-export const getMockToken = () => {
-  // This is a mock token for development purposes only
-  return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXIiLCJpZCI6IjEyMzQ1Njc4OTAiLCJpYXQiOjE1MTYyMzkwMjJ9.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc';
-};
-
-// For development, set a mock token if none exists
-if (!getToken() && (import.meta.env.MODE === 'development' || import.meta.env.DEV)) {
-  setToken(getMockToken());
-}
-
 export default {
   getToken,
   setToken,
   removeToken,
-  isAuthenticated,
-  getMockToken
+  isAuthenticated
 };

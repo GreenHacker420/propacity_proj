@@ -811,7 +811,7 @@ class GeminiService:
                 "key_points": ["Circuit breaker active - temporarily using local processing"],
                 "pain_points": ["API reliability issues detected"],
                 "feature_requests": ["Will automatically retry Gemini API later"],
-                "positive_aspects": ["Basic analysis still available during API issues"]
+                "positive_feedback": ["Basic analysis still available during API issues"]
             }
             # Cache the fallback result
             self._add_to_cache(cache_key, fallback_result, "insight")
@@ -825,7 +825,7 @@ class GeminiService:
                 "key_points": ["Rate limit active - temporarily using local processing"],
                 "pain_points": ["API rate limits reached"],
                 "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                "positive_aspects": ["Basic analysis still available during rate limiting"]
+                "positive_feedback": ["Basic analysis still available during rate limiting"]
             }
             # Cache the fallback result
             self._add_to_cache(cache_key, fallback_result, "insight")
@@ -954,7 +954,7 @@ class GeminiService:
                     all_key_points.extend(batch_result.get("key_points", []))
                     all_pain_points.extend(batch_result.get("pain_points", []))
                     all_feature_requests.extend(batch_result.get("feature_requests", []))
-                    all_positive_aspects.extend(batch_result.get("positive_aspects", []))
+                    all_positive_aspects.extend(batch_result.get("positive_feedback", []))
 
                 # Generate a combined summary
                 combined_summary = self._generate_combined_summary(batch_summaries)
@@ -1171,23 +1171,33 @@ class GeminiService:
               "key_points": ["Point 1", "Point 2", "Point 3"],
               "pain_points": ["Pain point 1", "Pain point 2", "Pain point 3"],
               "feature_requests": ["Feature request 1", "Feature request 2", "Feature request 3"],
-              "positive_feedback": ["Positive aspect 1", "Positive aspect 2", "Positive aspect 3"]
+              "positive_feedback": ["Positive aspect 1", "Positive aspect 2", "Positive aspect 3"],
+              "suggested_priorities": ["Priority 1", "Priority 2", "Priority 3"],
+              "source_type": "reviews",
+              "source_name": "Product Reviews",
+              "sentiment_distribution": {{
+                "positive": 0,
+                "neutral": 0,
+                "negative": 0
+              }},
+              "classification_distribution": {{
+                "pain_point": 0,
+                "feature_request": 0,
+                "positive_feedback": 0,
+                "suggested_priority": 0
+              }}
             }}
 
             IMPORTANT:
-            1. Use "positive_feedback" as the key, NOT "positive_aspects"
-            2. Return ONLY valid JSON with the exact keys specified above
-            3. Do not include any markdown formatting or code block markers
-
-            STRICT REQUIREMENTS:
-            1. Return ONLY the JSON object with NO markdown formatting, NO ```json tags, and NO other text.
-            2. Use DOUBLE QUOTES for all keys and string values. DO NOT use single quotes.
-            3. All arrays MUST contain at least one item. If you cannot find specific items for a category,
-               include a general statement like "No specific pain points identified" as an item in that array.
-            4. The "summary" field MUST NOT be empty.
-            5. Be concise in your summary and limit each array to at most 7 items.
-            6. DO NOT include any explanations, notes, or additional text outside the JSON object.
-            7. Ensure the JSON is properly formatted and valid.
+            1. Return ONLY valid JSON with the exact keys specified above
+            2. Do not include any markdown formatting or code block markers
+            3. Use DOUBLE QUOTES for all keys and string values
+            4. All arrays MUST contain at least one item
+            5. The "summary" field MUST NOT be empty
+            6. Be concise in your summary and limit each array to at most 7 items
+            7. DO NOT include any explanations, notes, or additional text outside the JSON object
+            8. The "source_type" and "source_name" fields are required and must be included
+            9. The sentiment_distribution and classification_distribution must reflect the counts of items in their respective arrays
 
             Reviews to analyze:
             {reviews_text}
@@ -1236,34 +1246,14 @@ class GeminiService:
                             elif clean_part.startswith("JSON"):
                                 clean_part = clean_part[4:].strip()
 
-                            # Log the extracted part for debugging
-                            logger.info(f"Extracted code block part {i} (first 100 chars): {clean_part[:100]}")
-
                             # Try to parse this part
                             try:
                                 result = json.loads(clean_part)
                                 logger.info("Successfully extracted JSON from code block in insights")
                                 break
-                            except json.JSONDecodeError as je:
-                                logger.warning(f"Failed to parse code block part {i}: {str(je)}")
-                                # Try to clean the JSON before parsing
-                                try:
-                                    # Replace single quotes with double quotes
-                                    cleaned_json = clean_part.replace("'", '"')
-                                    # Ensure property names are double-quoted
-                                    for prop in ["summary", "key_points", "pain_points", "feature_requests", "positive_feedback", "positive_aspects"]:
-                                        cleaned_json = cleaned_json.replace(f"{prop}:", f'"{prop}":')
-
-                                    result = json.loads(cleaned_json)
-                                    logger.info(f"Successfully parsed cleaned JSON from code block {i}")
-                                    break
-                                except json.JSONDecodeError as clean_error:
-                                    logger.warning(f"Failed to parse cleaned code block {i}: {str(clean_error)}")
-                                    continue
-
-                # If code block extraction failed, try other methods
-                if 'result' not in locals():
-                    logger.info("Code block extraction failed, trying bracket detection")
+                            except json.JSONDecodeError:
+                                continue
+                else:
                     # Try to find object brackets if no code blocks
                     try:
                         # Find the first { and last }
@@ -1272,183 +1262,64 @@ class GeminiService:
 
                         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                             json_text = text[start_idx:end_idx+1]
-                            logger.info(f"Extracted JSON using brackets (first 100 chars): {json_text[:100]}")
                             result = json.loads(json_text)
                             logger.info("Successfully extracted JSON object using bracket detection in insights")
                         else:
                             raise ValueError("Could not find valid JSON object brackets")
                     except Exception as bracket_error:
                         logger.error(f"Failed to extract JSON using bracket detection in insights: {str(bracket_error)}")
-
-                        # Try to find JSON array brackets if object detection failed
+                        # Last resort - try to clean up the text and parse again
+                        clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
                         try:
-                            # Find the first [ and last ]
-                            start_idx = text.find('[')
-                            end_idx = text.rfind(']')
-
-                            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                                json_text = text[start_idx:end_idx+1]
-                                logger.info(f"Extracted JSON array using brackets (first 100 chars): {json_text[:100]}")
-                                # Try to parse as array and convert to expected object format
-                                array_result = json.loads(json_text)
-                                if isinstance(array_result, list):
-                                    # Convert array to object with expected structure
-                                    result = {
-                                        "summary": "Generated from array response",
-                                        "key_points": array_result[:3] if len(array_result) >= 3 else array_result,
-                                        "pain_points": [],
-                                        "feature_requests": [],
-                                        "positive_feedback": []
-                                    }
-                                    logger.info("Successfully extracted and converted JSON array to object format")
-                                else:
-                                    raise ValueError("Extracted JSON is not an array")
-                            else:
-                                # Last resort - try to clean up the text and parse again
-                                clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
-                                try:
-                                    result = json.loads(clean_text)
-                                    logger.info("Successfully parsed JSON after quote replacement in insights")
-                                except json.JSONDecodeError:
-                                    logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
-                                    # Create a default structure from the raw text
-                                    logger.info("Creating fallback structure from raw text")
-
-                                    # Extract potential insights from the raw text
-                                    lines = text.split('\n')
-                                    summary = text[:250] if len(text) > 0 else "No summary available"
-
-                                    # Try to extract key points, pain points, etc. from the text
-                                    key_points = []
-                                    pain_points = []
-                                    feature_requests = []
-                                    positive_aspects = []
-
-                                    for line in lines:
-                                        line = line.strip()
-                                        if not line:
-                                            continue
-
-                                        # Skip lines that are likely headers or formatting
-                                        if line.startswith('#') or line.startswith('```') or line.startswith('{') or line.startswith('}'):
-                                            continue
-
-                                        # Try to categorize the line based on keywords
-                                        lower_line = line.lower()
-                                        if any(term in lower_line for term in ['issue', 'problem', 'bug', 'error', 'crash', 'fail', 'poor']):
-                                            pain_points.append(line)
-                                        elif any(term in lower_line for term in ['request', 'feature', 'add', 'improve', 'enhancement', 'should', 'could']):
-                                            feature_requests.append(line)
-                                        elif any(term in lower_line for term in ['good', 'great', 'excellent', 'like', 'love', 'enjoy', 'positive']):
-                                            positive_aspects.append(line)
-                                        else:
-                                            # If we can't categorize, add to key points
-                                            key_points.append(line)
-
-                                    # Ensure we have at least one item in each category
-                                    if not key_points:
-                                        key_points = ["No specific key points identified"]
-                                    if not pain_points:
-                                        pain_points = ["No specific pain points identified"]
-                                    if not feature_requests:
-                                        feature_requests = ["No specific feature requests identified"]
-                                    if not positive_aspects:
-                                        positive_aspects = ["No specific positive aspects identified"]
-
-                                    # Create the fallback result structure
-                                    result = {
-                                        "summary": summary,
-                                        "key_points": key_points[:5],
-                                        "pain_points": pain_points[:5],
-                                        "feature_requests": feature_requests[:5],
-                                        "positive_feedback": positive_aspects[:5]  # Map positive_aspects to positive_feedback
-                                    }
-
-                                    logger.info("Created fallback structure from raw text")
-                        except Exception as array_error:
-                            logger.error(f"Failed to extract JSON array: {str(array_error)}")
-                            # Last resort - try to clean up the text and parse again
-                            clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
-                            try:
-                                result = json.loads(clean_text)
-                                logger.info("Successfully parsed JSON after quote replacement in insights")
-                            except json.JSONDecodeError:
-                                logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
-                                # Create a default structure from the raw text
-                                logger.info("Creating fallback structure from raw text")
-
-                                # Extract potential insights from the raw text
-                                lines = text.split('\n')
-                                summary = text[:250] if len(text) > 0 else "No summary available"
-
-                                # Try to extract key points, pain points, etc. from the text
-                                key_points = []
-                                pain_points = []
-                                feature_requests = []
-                                positive_aspects = []
-
-                                for line in lines:
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-
-                                    # Skip lines that are likely headers or formatting
-                                    if line.startswith('#') or line.startswith('```') or line.startswith('{') or line.startswith('}'):
-                                        continue
-
-                                    # Try to categorize the line based on keywords
-                                    lower_line = line.lower()
-                                    if any(term in lower_line for term in ['issue', 'problem', 'bug', 'error', 'crash', 'fail', 'poor']):
-                                        pain_points.append(line)
-                                    elif any(term in lower_line for term in ['request', 'feature', 'add', 'improve', 'enhancement', 'should', 'could']):
-                                        feature_requests.append(line)
-                                    elif any(term in lower_line for term in ['good', 'great', 'excellent', 'like', 'love', 'enjoy', 'positive']):
-                                        positive_aspects.append(line)
-                                    else:
-                                        # If we can't categorize, add to key points
-                                        key_points.append(line)
-
-                                # Ensure we have at least one item in each category
-                                if not key_points:
-                                    key_points = ["No specific key points identified"]
-                                if not pain_points:
-                                    pain_points = ["No specific pain points identified"]
-                                if not feature_requests:
-                                    feature_requests = ["No specific feature requests identified"]
-                                if not positive_aspects:
-                                    positive_aspects = ["No specific positive aspects identified"]
-
-                                # Create the fallback result structure
-                                result = {
-                                    "summary": summary,
-                                    "key_points": key_points[:5],
-                                    "pain_points": pain_points[:5],
-                                    "feature_requests": feature_requests[:5],
-                                    "positive_feedback": positive_aspects[:5]  # Map positive_aspects to positive_feedback
-                                }
-
-                                logger.info("Created fallback structure from raw text")
+                            result = json.loads(clean_text)
+                            logger.info("Successfully parsed JSON after quote replacement in insights")
+                        except json.JSONDecodeError:
+                            logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
+                            # Create a default structure from the raw text
+                            result = {
+                                "summary": text[:250] if len(text) > 0 else "No summary available",
+                                "key_points": ["No specific key points identified"],
+                                "pain_points": ["No specific pain points identified"],
+                                "feature_requests": ["No specific feature requests identified"],
+                                "positive_feedback": ["No specific positive aspects identified"]
+                            }
+                            logger.info("Created fallback structure from raw text")
 
             # Ensure all required fields exist with default values if missing
             if "summary" not in result or not result["summary"]:
                 result["summary"] = "No summary available"
                 logger.warning("Summary field missing or empty in Gemini response")
 
-            for field in ["key_points", "pain_points", "feature_requests", "positive_feedback"]:
+            for field in ["key_points", "pain_points", "feature_requests", "positive_feedback", "suggested_priorities"]:
                 if field not in result or not isinstance(result[field], list):
                     result[field] = []
                     logger.warning(f"{field} field missing or not a list in Gemini response")
 
-            # For backward compatibility - if we have positive_aspects but not positive_feedback
+            # Ensure source_type and source_name are present
+            if "source_type" not in result:
+                result["source_type"] = "reviews"
+            if "source_name" not in result:
+                result["source_name"] = "Product Reviews"
+
+            # Calculate sentiment distribution from the arrays
+            result["sentiment_distribution"] = {
+                "positive": len(result.get("positive_feedback", [])),
+                "neutral": len(result.get("feature_requests", [])) + len(result.get("suggested_priorities", [])),
+                "negative": len(result.get("pain_points", []))
+            }
+
+            # Calculate classification distribution
+            result["classification_distribution"] = {
+                "pain_point": len(result.get("pain_points", [])),
+                "feature_request": len(result.get("feature_requests", [])),
+                "positive_feedback": len(result.get("positive_feedback", [])),
+                "suggested_priority": len(result.get("suggested_priorities", []))
+            }
+
+            # Remove any positive_aspects field to avoid confusion
             if "positive_aspects" in result:
-                # Always use positive_aspects as positive_feedback for consistency
-                if "positive_feedback" not in result or not result["positive_feedback"]:
-                    result["positive_feedback"] = result.pop("positive_aspects")
-                    logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
-                else:
-                    # If both exist, merge them
-                    result["positive_feedback"].extend(result.pop("positive_aspects"))
-                    logger.info("Merged positive_aspects into positive_feedback for frontend compatibility")
+                result.pop("positive_aspects")
+                logger.info("Removed positive_aspects field to maintain consistent structure")
 
             # Log the parsed result structure
             logger.info(f"Parsed Gemini result structure: {list(result.keys())}")

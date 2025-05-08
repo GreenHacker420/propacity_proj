@@ -97,29 +97,29 @@ const DataVisualization = ({ data }) => {
         // Check if we have the expected properties, if not, create default values
         if (Object.keys(sentimentDistribution).length === 0 &&
             (summary.pain_points || summary.feature_requests || summary.positive_feedback ||
-             summary.positive_aspects)) {
+             summary.suggested_priorities)) {
           // We're likely in fallback mode with a different data structure
           console.log('Using fallback data structure for visualization');
 
-          // Create sentiment distribution from pain points and positive aspects
-          // Handle different property names for backward compatibility
+          // Create sentiment distribution from pain points and positive feedback
           const painPointCount = Array.isArray(summary.pain_points) ? summary.pain_points.length : 0;
           const featureRequestCount = Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0;
-          const positiveCount = Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length :
-                               (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0);
+          const positiveCount = Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0;
+          const priorityCount = Array.isArray(summary.suggested_priorities) ? summary.suggested_priorities.length : 0;
 
           // Create synthetic distributions for visualization
           Object.assign(sentimentDistribution, {
-            negative: painPointCount,
-            neutral: featureRequestCount,
-            positive: positiveCount
+            positive: positiveCount,
+            neutral: featureRequestCount + priorityCount,
+            negative: painPointCount
           });
 
           // Create classification distribution
           Object.assign(classificationDistribution, {
             pain_point: painPointCount,
             feature_request: featureRequestCount,
-            positive_feedback: positiveCount
+            positive_feedback: positiveCount,
+            suggested_priority: priorityCount
           });
 
           // Create keyword distribution from all points
@@ -147,16 +147,18 @@ const DataVisualization = ({ data }) => {
             });
           }
 
-          if (Array.isArray(summary.positive_aspects)) {
-            summary.positive_aspects.forEach(point => {
+          if (Array.isArray(summary.positive_feedback)) {
+            summary.positive_feedback.forEach(point => {
               if (point && typeof point === 'object' && point.text) {
                 allPoints.push(point.text);
               } else if (typeof point === 'string') {
                 allPoints.push(point);
               }
             });
-          } else if (Array.isArray(summary.positive_feedback)) {
-            summary.positive_feedback.forEach(point => {
+          }
+
+          if (Array.isArray(summary.suggested_priorities)) {
+            summary.suggested_priorities.forEach(point => {
               if (point && typeof point === 'object' && point.text) {
                 allPoints.push(point.text);
               } else if (typeof point === 'string') {
@@ -238,8 +240,8 @@ const DataVisualization = ({ data }) => {
             // Fall back to counting items in arrays
             totalReviews = (Array.isArray(summary.pain_points) ? summary.pain_points.length : 0) +
                           (Array.isArray(summary.feature_requests) ? summary.feature_requests.length : 0) +
-                          (Array.isArray(summary.positive_aspects) ? summary.positive_aspects.length : 0) +
-                          (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0);
+                          (Array.isArray(summary.positive_feedback) ? summary.positive_feedback.length : 0) +
+                          (Array.isArray(summary.suggested_priorities) ? summary.suggested_priorities.length : 0);
           }
         }
 
@@ -268,6 +270,8 @@ const DataVisualization = ({ data }) => {
           // Ensure these properties exist with default values if missing
           total_reviews: totalReviews,
           average_sentiment: avgSentiment,
+          sentiment_distribution: sentimentDistribution,
+          classification_distribution: classificationDistribution,
           game_distribution: summary.game_distribution || gameDistribution,
           top_keywords: summary.top_keywords || topKeywords
         };

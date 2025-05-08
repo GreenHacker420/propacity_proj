@@ -415,14 +415,14 @@ class TextAnalyzer:
             Dictionary with pain points, feature requests, positive feedback, and suggested priorities
         """
         # Helper function to get attribute from either dict or object
-        def get_attr(obj, attr):
+        def get_attr(obj, attr, default=None):
             try:
                 return obj[attr]  # Try dictionary access
             except (TypeError, KeyError):
                 try:
                     return getattr(obj, attr)  # Fall back to attribute access
                 except (AttributeError, TypeError):
-                    return None  # Return None if attribute doesn't exist
+                    return default  # Return default if attribute doesn't exist
 
         # Validate input
         if not reviews:
@@ -443,8 +443,7 @@ class TextAnalyzer:
                     "sentiment_score": 0.5,
                     "keywords": []
                 }],
-                "suggested_priorities": ["Collect more user feedback for analysis"],
-                "gemini_powered": False
+                "suggested_priorities": ["Collect more user feedback for analysis"]
             }
 
         # Check if Gemini API is available
@@ -463,229 +462,109 @@ class TextAnalyzer:
             circuit_open = False
             rate_limited = False
 
-        # Try using Gemini for advanced insights if available and not rate limited/circuit open
         if use_gemini:
             try:
-                start_time = time.time()
-                logger.info("Using Gemini API for insights extraction")
-
-                # Extract review texts - with improved error handling
-                review_texts = []
+                # Extract text from reviews
+                texts = []
                 for review in reviews:
                     text = get_attr(review, "text")
-                    if text and isinstance(text, str) and text.strip():
-                        review_texts.append(text)
+                    if text and isinstance(text, str):
+                        texts.append(text)
 
-                if not review_texts:
-                    logger.warning("No valid review texts found for Gemini insights extraction")
+                if not texts:
+                    logger.warning("No valid text found in reviews for Gemini analysis")
                     return self._traditional_summary(reviews)
 
-                # Log the number of reviews being processed
-                logger.info(f"Processing {len(review_texts)} reviews for insights extraction")
+                # Get insights from Gemini
+                gemini_insights = self.gemini_service.extract_insights(texts)
 
-                # Get insights from Gemini (now with batching and rate limit handling)
-                gemini_insights = self.gemini_service.extract_insights(review_texts)
+                # Ensure all required fields exist and are in the correct format
+                summary_response = {
+                    "pain_points": [],
+                    "feature_requests": [],
+                    "positive_feedback": [],
+                    "suggested_priorities": []
+                }
+
+                # Process pain points
+                for item in gemini_insights.get("pain_points", []):
+                    if isinstance(item, dict):
+                        summary_response["pain_points"].append({
+                            "text": item.get("text", "Unknown pain point"),
+                            "sentiment_score": item.get("sentiment_score", 0.2),
+                            "keywords": item.get("keywords", [])
+                        })
+                    elif isinstance(item, str):
+                        summary_response["pain_points"].append({
+                            "text": item,
+                            "sentiment_score": 0.2,
+                            "keywords": []
+                        })
+
+                # Process feature requests
+                for item in gemini_insights.get("feature_requests", []):
+                    if isinstance(item, dict):
+                        summary_response["feature_requests"].append({
+                            "text": item.get("text", "Unknown feature request"),
+                            "sentiment_score": item.get("sentiment_score", 0.7),
+                            "keywords": item.get("keywords", [])
+                        })
+                    elif isinstance(item, str):
+                        summary_response["feature_requests"].append({
+                            "text": item,
+                            "sentiment_score": 0.7,
+                            "keywords": []
+                        })
+
+                # Process positive feedback
+                for item in gemini_insights.get("positive_feedback", []):
+                    if isinstance(item, dict):
+                        summary_response["positive_feedback"].append({
+                            "text": item.get("text", "Unknown positive feedback"),
+                            "sentiment_score": item.get("sentiment_score", 0.9),
+                            "keywords": item.get("keywords", [])
+                        })
+                    elif isinstance(item, str):
+                        summary_response["positive_feedback"].append({
+                            "text": item,
+                            "sentiment_score": 0.9,
+                            "keywords": []
+                        })
+
+                # Process suggested priorities
+                summary_response["suggested_priorities"] = gemini_insights.get("suggested_priorities", [])
+
+                # Ensure we have at least one item in each category
+                if not summary_response["pain_points"]:
+                    summary_response["pain_points"] = [{
+                        "text": "No specific pain points identified",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+                if not summary_response["feature_requests"]:
+                    summary_response["feature_requests"] = [{
+                        "text": "No specific feature requests identified",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+                if not summary_response["positive_feedback"]:
+                    summary_response["positive_feedback"] = [{
+                        "text": "No specific positive feedback identified",
+                        "sentiment_score": 0.5,
+                        "keywords": []
+                    }]
+                if not summary_response["suggested_priorities"]:
+                    summary_response["suggested_priorities"] = ["Collect more specific user feedback for detailed analysis"]
+
+                return summary_response
 
             except Exception as e:
                 logger.error(f"Error in Gemini insights extraction: {str(e)}")
                 logger.warning("Falling back to traditional summary generation")
-                # Add error information to the summary
-                traditional_summary = self._traditional_summary(reviews)
-                traditional_summary["error"] = str(e)
-                traditional_summary["error_source"] = "gemini_api"
-                return traditional_summary
+                return self._traditional_summary(reviews)
         else:
             # Generate traditional summary
-            traditional_summary = self._traditional_summary(reviews)
-
-            # Log why we're not using Gemini and add note to summary
-            if not gemini_available:
-                if not self.gemini_service:
-                    logger.info("Gemini service not configured. Using traditional summary generation")
-                    traditional_summary["note"] = "Using local processing (Gemini not configured)"
-                elif not self.gemini_service.available:
-                    logger.info("Gemini API not available. Using traditional summary generation")
-                    traditional_summary["note"] = "Using local processing (Gemini not available)"
-                elif not self.use_gemini:
-                    logger.info("Gemini API disabled. Using traditional summary generation")
-                    traditional_summary["note"] = "Using local processing (Gemini disabled)"
-                elif not reviews:
-                    logger.info("No reviews to analyze. Using traditional summary generation")
-                    traditional_summary["note"] = "Using local processing (no reviews to analyze)"
-            elif circuit_open:
-                logger.info("Circuit breaker is open. Using traditional summary generation")
-                traditional_summary["note"] = "Using local processing due to circuit breaker"
-                traditional_summary["circuit_open"] = True
-            elif rate_limited:
-                logger.info("Rate limited. Using traditional summary generation")
-                traditional_summary["note"] = "Using local processing due to rate limiting"
-                traditional_summary["rate_limited"] = True
-
-            return traditional_summary
-
-        # Process Gemini insights
-        processing_time = time.time() - start_time
-        logger.info(f"Gemini insights extraction completed in {processing_time:.2f} seconds")
-
-        # Log the structure of the insights
-        logger.info(f"Gemini insights keys: {list(gemini_insights.keys())}")
-        logger.info(f"Pain points: {len(gemini_insights.get('pain_points', []))}, " +
-                   f"Feature requests: {len(gemini_insights.get('feature_requests', []))}, " +
-                   f"Positive feedback: {len(gemini_insights.get('positive_feedback', []))}")
-
-        # For backward compatibility - if we have positive_aspects but not positive_feedback
-        if "positive_aspects" in gemini_insights:
-            # Always use positive_aspects as positive_feedback for consistency
-            if "positive_feedback" not in gemini_insights or not gemini_insights["positive_feedback"]:
-                gemini_insights["positive_feedback"] = gemini_insights.pop("positive_aspects")
-                logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
-            else:
-                # If both exist, merge them
-                gemini_insights["positive_feedback"].extend(gemini_insights.pop("positive_aspects"))
-                logger.info("Merged positive_aspects into positive_feedback for frontend compatibility")
-
-        # Process the insights
-        pain_points = []
-        feature_requests = []
-        positive_feedback = []
-        priorities = []
-
-        # Add pain points
-        pain_points_list = gemini_insights.get("pain_points", [])
-        if not pain_points_list:
-            # Add a default pain point if none were found
-            pain_points_list = ["No specific pain points identified in the reviews"]
-
-        for i, point in enumerate(pain_points_list):
-            # Skip empty strings
-            if not point or not isinstance(point, str):
-                continue
-
-            # Extract keywords from the point
-            keywords = self.extract_keywords(point) if point else []
-
-            pain_points.append({
-                "text": point,
-                "sentiment_score": 0.2,  # Low score for pain points
-                "keywords": keywords
-            })
-            if i == 0 and "no specific" not in point.lower():
-                priorities.append(f"Address critical issue: {point[:100]}...")
-
-        # Add feature requests
-        feature_requests_list = gemini_insights.get("feature_requests", [])
-        if not feature_requests_list:
-            # Add a default feature request if none were found
-            feature_requests_list = ["No specific feature requests identified in the reviews"]
-
-        for i, request in enumerate(feature_requests_list):
-            # Skip empty strings
-            if not request or not isinstance(request, str):
-                continue
-
-            # Extract keywords from the request
-            keywords = self.extract_keywords(request) if request else []
-
-            feature_requests.append({
-                "text": request,
-                "sentiment_score": 0.7,  # Higher score for feature requests
-                "keywords": keywords
-            })
-            if i == 0 and "no specific" not in request.lower():
-                priorities.append(f"Implement requested feature: {request[:100]}...")
-
-        # Add positive feedback
-        positive_feedback_list = gemini_insights.get("positive_feedback", [])
-        if not positive_feedback_list:
-            # Add a default positive feedback if none were found
-            positive_feedback_list = ["No specific positive feedback identified in the reviews"]
-
-        for i, positive in enumerate(positive_feedback_list):
-            # Skip empty strings
-            if not positive or not isinstance(positive, str):
-                continue
-
-            # Extract keywords from the positive feedback
-            keywords = self.extract_keywords(positive) if positive else []
-
-            positive_feedback.append({
-                "text": positive,
-                "sentiment_score": 0.9,  # High score for positive feedback
-                "keywords": keywords
-            })
-            if i == 0 and "no specific" not in positive.lower():
-                priorities.append(f"Maintain strengths: {positive[:100]}...")
-
-        # If no priorities were added, add a general one from the summary
-        if not priorities and "summary" in gemini_insights:
-            priorities.append(f"General recommendation: {gemini_insights['summary'][:100]}...")
-
-        # Ensure we have at least one item in each category
-        if not pain_points:
-            pain_points = [{
-                "text": "No specific pain points identified in the reviews",
-                "sentiment_score": 0.5,
-                "keywords": []
-            }]
-
-        if not feature_requests:
-            feature_requests = [{
-                "text": "No specific feature requests identified in the reviews",
-                "sentiment_score": 0.5,
-                "keywords": []
-            }]
-
-        if not positive_feedback:
-            positive_feedback = [{
-                "text": "No specific positive feedback identified in the reviews",
-                "sentiment_score": 0.5,
-                "keywords": []
-            }]
-
-        if not priorities:
-            priorities = ["No specific priorities identified based on the reviews"]
-
-        # Log the final counts
-        logger.info(f"Final summary counts - Pain points: {len(pain_points)}, " +
-                   f"Feature requests: {len(feature_requests)}, " +
-                   f"Positive feedback: {len(positive_feedback)}, " +
-                   f"Priorities: {len(priorities)}")
-
-        # Create the summary response with all required fields for the frontend
-        summary_response = {
-            "summary": gemini_insights.get("summary"),
-            "pain_points": pain_points[:3],
-            "feature_requests": feature_requests[:3],
-            "positive_feedback": positive_feedback[:3],
-            "suggested_priorities": priorities,
-            "gemini_powered": True,
-            "processing_time": processing_time
-        }
-
-        # Add additional metadata for frontend
-        summary_response["reviews"] = reviews
-        summary_response["source_type"] = "analysis"
-
-        # Add source_name if available from the first review
-        if reviews and len(reviews) > 0:
-            # Try to get source name from the first review
-            try:
-                if hasattr(reviews[0], 'source') or (isinstance(reviews[0], dict) and 'source' in reviews[0]):
-                    source = reviews[0].source if hasattr(reviews[0], 'source') else reviews[0].get('source')
-                    if source:
-                        summary_response["source_name"] = source
-                elif hasattr(reviews[0], 'metadata') or (isinstance(reviews[0], dict) and 'metadata' in reviews[0]):
-                    metadata = reviews[0].metadata if hasattr(reviews[0], 'metadata') else reviews[0].get('metadata', {})
-                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
-                        summary_response["source_name"] = metadata['source']
-            except Exception as e:
-                logger.warning(f"Error getting source name: {str(e)}")
-
-        # Ensure source_name is set
-        if "source_name" not in summary_response:
-            summary_response["source_name"] = "unknown"
-
-        return summary_response
+            return self._traditional_summary(reviews)
 
     def _traditional_summary(self, reviews: List[Any]) -> Dict:
         """
@@ -844,36 +723,10 @@ class TextAnalyzer:
 
         # Create the summary response with all required fields for the frontend
         summary_response = {
-            "summary": "Summary generated from traditional analysis",
             "pain_points": pain_point_items,
             "feature_requests": feature_request_items,
             "positive_feedback": positive_feedback_items,
-            "suggested_priorities": priorities,
-            "gemini_powered": False
+            "suggested_priorities": priorities
         }
-
-        # Add additional metadata for frontend
-        summary_response["reviews"] = reviews
-        summary_response["source_type"] = "analysis"
-        summary_response["total_reviews"] = review_count
-
-        # Add source_name if available from the first review
-        if reviews and len(reviews) > 0:
-            # Try to get source name from the first review
-            try:
-                if hasattr(reviews[0], 'source') or (isinstance(reviews[0], dict) and 'source' in reviews[0]):
-                    source = reviews[0].source if hasattr(reviews[0], 'source') else reviews[0].get('source')
-                    if source:
-                        summary_response["source_name"] = source
-                elif hasattr(reviews[0], 'metadata') or (isinstance(reviews[0], dict) and 'metadata' in reviews[0]):
-                    metadata = reviews[0].metadata if hasattr(reviews[0], 'metadata') else reviews[0].get('metadata', {})
-                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
-                        summary_response["source_name"] = metadata['source']
-            except Exception as e:
-                logger.warning(f"Error getting source name: {str(e)}")
-
-        # Ensure source_name is set
-        if "source_name" not in summary_response:
-            summary_response["source_name"] = "unknown"
 
         return summary_response
