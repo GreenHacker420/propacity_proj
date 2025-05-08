@@ -2,9 +2,9 @@
 
 ## About
 
-The Product Review Analyzer is a powerful AI-driven application designed to help product managers and development teams make data-driven decisions. It analyzes product reviews, user feedback, identify pain points, extract feature requests, and highlight positive feedback.
+The Product Review Analyzer is a powerful AI-driven application designed to help product managers and development teams make data-driven decisions. It analyzes product reviews, user feedback, identifies pain points, extracts feature requests, and highlights positive feedback to transform raw customer input into actionable priorities.
 
-This tool leverages advanced AI technologies including Google's Gemini API, Hugging Face Transformers, and natural language processing libraries to provide comprehensive analysis of user sentiment and feedback. With features like real-time data scraping, batch processing, and interactive visualizations, it transforms raw feedback into strategic priorities for product development.
+This tool leverages advanced AI technologies including Google's Gemini API (using the Gemini 2.0 Flash model), Hugging Face Transformers, and natural language processing libraries to provide comprehensive analysis of user sentiment and feedback. With features like real-time data scraping, batch processing with parallel execution, circuit breaker pattern for API resilience, and interactive visualizations, it transforms raw feedback into strategic priorities for product development.
 
 ## Features
 
@@ -284,6 +284,8 @@ npm run dev
 - `ENABLE_WEBSOCKETS` - Enable WebSocket support (default: True)
 - `PARALLEL_PROCESSING` - Enable parallel processing (default: True)
 - `MAX_WORKERS` - Maximum number of worker threads for parallel processing (default: 4)
+- `BATCH_SIZE_MULTIPLIER` - Adjust all batch sizes (default: 1.0)
+- `CIRCUIT_BREAKER_TIMEOUT` - Time before resetting circuit breaker (default: 300 seconds)
 
 ### Production Variables
 - `DEVELOPMENT_MODE` - Set to `false` for production environments (default: True)

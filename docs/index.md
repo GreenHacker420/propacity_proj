@@ -72,6 +72,7 @@ The Product Review Analyzer follows a client-server architecture:
 - [Features](features/index.md): Detailed information about all features
   - [Batch Processing](features/batch-processing.md): Batch processing and progress reporting
   - [WebSocket Support](features/websocket.md): Real-time progress updates
+  - [Weekly Summaries](features/weekly-summaries.md): Weekly aggregated insights for product prioritization
   - [User Guide](features/user-guide.md): Instructions for using the application
 - [API Reference](api/index.md): Complete API documentation
 - [Deployment](deployment/index.md): Deployment instructions

@@ -67,5 +67,6 @@ For detailed information about each feature, please refer to the specific featur
 - [Insight Extraction](insight-extraction.md)
 - [Batch Processing](batch-processing.md)
 - [Visualization](visualization.md)
-- [Weekly Summaries](weekly-summaries.md)
+- [Weekly Summaries](weekly-summaries.md): Aggregated insights for product prioritization
+- [WebSocket Support](websocket.md): Real-time progress updates
 - [History Tracking](history-tracking.md)
