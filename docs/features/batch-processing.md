@@ -7,38 +7,57 @@ The Product Review Analyzer includes a sophisticated batch processing system des
 When processing large datasets (hundreds or thousands of reviews), the system:
 
 1. Divides the data into optimally sized batches
-2. Processes each batch efficiently
+2. Processes each batch efficiently using parallel processing
 3. Reports progress in real-time via WebSockets
-4. Provides accurate time estimates
+4. Provides accurate time estimates with dynamic updates
 5. Optimizes memory usage for large datasets
+6. Gracefully handles API rate limits with circuit breaker pattern
 
 ## Key Features
 
 - **Dynamic Batch Sizing**: Automatically adjusts batch size based on review length
 - **Real-time Progress Updates**: Shows processing status via WebSockets
 - **Estimated Completion Time**: Dynamically calculates remaining processing time
-- **Memory Optimization**: Implements techniques to handle very large datasets
+- **Memory Optimization**: Implements techniques to handle very large datasets (73,000+ reviews)
 - **Parallel Processing**: Uses multiple threads for efficient analysis
+- **Circuit Breaker Pattern**: Falls back to local processing when API limits are hit
+- **RAM Usage Optimization**: Dynamically adjusts batch sizes based on available memory
+- **WebSocket Integration**: Provides real-time updates to the frontend
 
 ## Implementation Details
 
 ### Dynamic Batch Sizing Algorithm
 
-The system automatically adjusts batch sizes based on the average length of reviews:
+The system automatically adjusts batch sizes based on the average length of reviews and available system resources:
 
 ```python
 # Calculate optimal batch size based on review length
 avg_review_length = sum(len(review) for review in reviews) / len(reviews)
 
-# Adjust batch size based on average review length - increased for better performance
+# Get available system memory
+import psutil
+available_memory_mb = psutil.virtual_memory().available / (1024 * 1024)
+
+# Base batch size calculation
 if avg_review_length < 100:
-    batch_size = 300  # Very short reviews
+    batch_size = 500  # Very short reviews
 elif avg_review_length < 200:
-    batch_size = 200  # Short reviews
+    batch_size = 300  # Short reviews
 elif avg_review_length < 500:
-    batch_size = 150  # Medium reviews
+    batch_size = 200  # Medium reviews
 else:
-    batch_size = 100  # Long reviews
+    batch_size = 150  # Long reviews
+
+# Adjust based on available memory
+memory_factor = min(1.0, available_memory_mb / 1000)  # Scale down if less than 1GB available
+batch_size = int(batch_size * memory_factor)
+
+# Apply environment variable multiplier if set
+batch_size_multiplier = float(os.getenv("BATCH_SIZE_MULTIPLIER", 1.0))
+batch_size = int(batch_size * batch_size_multiplier)
+
+# Ensure minimum batch size
+batch_size = max(batch_size, 50)
 ```
 
 This algorithm ensures that:
@@ -46,6 +65,8 @@ This algorithm ensures that:
 - Longer reviews are processed in smaller batches to avoid timeouts
 - The system adapts to the specific content being analyzed
 - Batch sizes are optimized for both performance and memory usage
+- Available system memory is considered to prevent out-of-memory errors
+- Administrators can fine-tune batch sizes using environment variables
 
 ### Progress Calculation
 
@@ -107,30 +128,83 @@ These optimizations allow the system to process datasets with tens of thousands 
 ### WebSocket Communication Flow
 
 1. **Connection Establishment**:
-   - Frontend connects to `/ws` endpoint with authentication token
+   - Frontend connects to `/ws/batch-progress` or `/ws/sentiment-progress` endpoint with authentication token
    - Backend validates token and establishes connection
-   - Connection is stored in active connections map
+   - Connection is stored in active connections map with client ID
 
 2. **Progress Updates**:
    - Backend sends JSON messages with progress information
-   - Frontend updates UI based on received data
-   - Messages include batch status, time estimates, and completion percentage
+   - Frontend updates UI based on received data in real-time
+   - Messages include batch status, time estimates, completion percentage, and processing speed
+   - Updates are sent after each batch completes
 
 3. **Connection Management**:
    - Ping/pong messages maintain connection
-   - Automatic reconnection on disconnection
+   - Automatic reconnection on disconnection with exponential backoff
    - Graceful handling of authentication failures
+   - Support for multiple simultaneous clients
+
+4. **Circuit Breaker Status**:
+   - WebSocket sends notifications when circuit breaker opens or closes
+   - Frontend displays appropriate messages about API status
+   - Users are informed when processing switches to local mode
+
+For detailed WebSocket implementation, see the [WebSocket Documentation](websocket.md).
 
 ## Frontend Integration
 
-The frontend displays batch processing progress using a dedicated component:
+The frontend displays batch processing progress using a dedicated component that connects to the WebSocket API:
 
 ```jsx
-<BatchProgress
-  status={status}
-  isVisible={isProcessing}
-  onComplete={handleProcessingComplete}
-/>
+import { useWebSocket } from '../hooks/useWebSocket';
+
+const BatchProgress = ({ isVisible, onComplete }) => {
+  const { isConnected, messages } = useWebSocket('ws://localhost:8000/ws/batch-progress');
+  const [progress, setProgress] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [processingSpeed, setProcessingSpeed] = useState(0);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [totalBatches, setTotalBatches] = useState(0);
+  const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      const latestMessage = messages[messages.length - 1];
+
+      if (latestMessage.type === 'progress') {
+        setProgress(latestMessage.data.percent_complete);
+        setTimeRemaining(latestMessage.data.estimated_time_remaining);
+        setProcessingSpeed(latestMessage.data.items_per_second);
+        setCurrentBatch(latestMessage.data.current_batch);
+        setTotalBatches(latestMessage.data.total_batches);
+      } else if (latestMessage.type === 'complete') {
+        onComplete();
+      } else if (latestMessage.type === 'error') {
+        setCircuitBreakerOpen(latestMessage.data.error_code === 'CIRCUIT_BREAKER_OPEN');
+      }
+    }
+  }, [messages, onComplete]);
+
+  return (
+    <div className={`batch-progress ${isVisible ? 'visible' : 'hidden'}`}>
+      <h3>Processing Reviews</h3>
+      <div className="progress-bar">
+        <div className="progress" style={{ width: `${progress}%` }}></div>
+      </div>
+      <div className="progress-stats">
+        <div>Progress: {progress.toFixed(1)}%</div>
+        <div>Batch: {currentBatch} of {totalBatches}</div>
+        <div>Processing speed: {processingSpeed.toFixed(1)} items/sec</div>
+        {timeRemaining && <div>Time remaining: {formatTime(timeRemaining)}</div>}
+        {circuitBreakerOpen && (
+          <div className="circuit-breaker-warning">
+            API rate limit reached. Using local processing.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 ```
 
 This component shows:
@@ -139,6 +213,8 @@ This component shows:
 - Items processed and total items
 - Processing speed (items per second)
 - Estimated time remaining
+- Circuit breaker status (when API rate limits are hit)
+- Connection status indicator
 
 ## Configuration Options
 
@@ -146,8 +222,12 @@ The batch processing system can be configured through environment variables:
 
 - `BATCH_SIZE_MULTIPLIER`: Adjust all batch sizes (default: 1.0)
 - `CIRCUIT_BREAKER_TIMEOUT`: Time before resetting circuit (default: 300 seconds)
-- `SLOW_PROCESSING_THRESHOLD`: Threshold for slow processing detection (default: 5 seconds)
-- `MAX_PARALLEL_WORKERS`: Maximum number of parallel workers (default: CPU count * 4)
+- `GEMINI_SLOW_THRESHOLD`: Threshold for slow processing detection (default: 5 seconds)
+- `MAX_WORKERS`: Maximum number of parallel workers (default: 4)
+- `PARALLEL_PROCESSING`: Enable parallel processing (default: True)
+- `ENABLE_WEBSOCKETS`: Enable WebSocket support (default: True)
+- `GEMINI_BATCH_SIZE`: Number of reviews to process in each Gemini API batch (default: 10)
+- `DEBUG`: Enable debug mode with additional logging (default: False)
 
 ## Best Practices
 

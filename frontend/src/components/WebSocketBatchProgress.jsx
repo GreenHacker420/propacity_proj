@@ -45,9 +45,24 @@ const WebSocketBatchProgress = ({ isProcessing, onComplete }) => {
     if (isProcessing) {
       // Add handler for batch progress messages
       const removeHandler = addMessageHandler((data) => {
+        console.log('Received WebSocket message:', data);
+
+        // Handle batch progress updates
         if (data.type === 'batch_progress') {
           console.log('Received batch progress update:', data);
           setStatus(data);
+        }
+        // Handle any message that contains batch progress information
+        else if (data.current_batch && data.total_batches) {
+          console.log('Received batch data in non-standard format:', data);
+          setStatus({
+            ...data,
+            type: 'batch_progress',
+            progress_percentage: data.progress_percentage ||
+              (data.items_processed && data.total_items
+                ? (data.items_processed / data.total_items) * 100
+                : (data.current_batch / data.total_batches) * 100)
+          });
         }
       });
 
@@ -68,10 +83,16 @@ const WebSocketBatchProgress = ({ isProcessing, onComplete }) => {
 
   // If processing but no status yet, show connecting message
   if (isProcessing && !status) {
+    // Log to help with debugging
+    console.log('Batch processing started, waiting for WebSocket updates...');
+
     return (
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-medium text-blue-700">Connecting to real-time progress updates...</p>
+          <p className="text-sm font-medium text-blue-700">Batch Processing Started</p>
+        </div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-blue-600">Connecting to real-time progress updates...</p>
         </div>
         <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
           <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: '30%' }}></div>

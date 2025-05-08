@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Product Review Analyzer integrates Google's Gemini API to provide advanced text analysis capabilities, including sentiment analysis, batch processing, and insight extraction. This document provides detailed information about the implementation, usage, and optimization techniques used in the integration.
+The Product Review Analyzer integrates Google's Gemini API to provide advanced text analysis capabilities, primarily for insight extraction and summary generation. This document provides detailed information about the implementation, usage, and optimization techniques used in the integration.
+
+The system uses the Gemini 2.0 Flash model for optimal performance and cost-effectiveness, with a sophisticated circuit breaker pattern to gracefully handle API rate limits. For sentiment analysis, the system always uses local processing to avoid Gemini API rate limits, while still leveraging the Gemini API for higher-level insights and summaries.
 
 ## Table of Contents
 
@@ -20,14 +22,19 @@ The Product Review Analyzer integrates Google's Gemini API to provide advanced t
 
 The Gemini API integration provides the following features:
 
-- **Sentiment Analysis**: Analyze the sentiment of text with high accuracy
-- **Batch Processing**: Process multiple reviews in batches for improved performance
-- **Insight Extraction**: Extract key insights, pain points, feature requests, and positive aspects from reviews
-- **Summary Generation**: Generate concise summaries from multiple reviews
+- **Local Sentiment Analysis**: Always use local processing for sentiment analysis to avoid API rate limits
+- **Gemini-Powered Insight Extraction**: Extract key insights, pain points, feature requests, and positive aspects from reviews using Gemini API
+- **Summary Generation**: Generate concise summaries from multiple reviews using Gemini API
+- **Weekly Summaries**: Generate weekly summaries for product prioritization using Gemini API
 - **Adaptive Throttling**: Automatically adjust request rates to avoid rate limits
 - **Multi-Level Caching**: Cache results for faster response times
 - **Circuit Breaker Pattern**: Gracefully degrade to local processing when API is unavailable
 - **Performance Monitoring**: Track API performance metrics
+- **Parallel Processing**: Process multiple batches in parallel for improved performance
+- **Dynamic Batch Sizing**: Automatically adjust batch sizes based on review length and available memory
+- **WebSocket Integration**: Provide real-time progress updates during batch processing
+- **Rate Limit Detection**: Automatically detect and handle API rate limits
+- **Optimized Resource Usage**: Balance between local processing and API calls for optimal performance
 
 ## Architecture
 
@@ -63,6 +70,11 @@ The Gemini API integration can be configured using the following environment var
 
 - `GEMINI_API_KEY`: Your Google Gemini API key (required)
 - `GEMINI_MODEL`: The Gemini model to use (default: "gemini-2.0-flash")
+- `GEMINI_BATCH_SIZE`: Number of reviews to process in each batch (default: 10)
+- `GEMINI_SLOW_THRESHOLD`: Threshold in seconds to detect slow processing (default: 5)
+- `CIRCUIT_BREAKER_TIMEOUT`: Time in seconds before resetting the circuit breaker (default: 300)
+- `PARALLEL_PROCESSING`: Enable parallel processing (default: True)
+- `MAX_WORKERS`: Maximum number of worker threads for parallel processing (default: 4)
 
 ### Example Configuration
 
@@ -76,13 +88,13 @@ GEMINI_MODEL=gemini-2.0-flash
 
 The following API endpoints are available for interacting with the Gemini API:
 
-### Sentiment Analysis
+### Sentiment Analysis (Local Processing)
 
 ```
 POST /api/gemini/sentiment
 ```
 
-Analyzes the sentiment of a single text.
+Analyzes the sentiment of a single text using local processing.
 
 **Request Body:**
 ```json
@@ -101,13 +113,15 @@ Analyzes the sentiment of a single text.
 }
 ```
 
-### Batch Processing
+Note: This endpoint always uses local processing with VADER sentiment analysis, not the Gemini API, to avoid rate limits.
+
+### Batch Processing (Local Processing)
 
 ```
 POST /api/gemini/batch
 ```
 
-Analyzes the sentiment of multiple texts in a single request.
+Analyzes the sentiment of multiple texts in a single request using local processing.
 
 **Request Body:**
 ```json
@@ -137,6 +151,8 @@ Analyzes the sentiment of multiple texts in a single request.
   "processing_time": 0.5
 }
 ```
+
+Note: This endpoint always uses local processing with parallel VADER sentiment analysis, not the Gemini API, to avoid rate limits and provide faster processing times for large batches.
 
 ### Insight Extraction
 
@@ -372,14 +388,79 @@ if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
         self._open_circuit()
 ```
 
-### Local Fallback
+### Local Sentiment Analysis
 
-The service includes a local fallback mechanism using VADER sentiment analysis:
+The service always uses local processing for sentiment analysis to avoid Gemini API rate limits. This approach provides faster processing times and eliminates the risk of hitting API rate limits during batch processing. The local sentiment analysis uses VADER (Valence Aware Dictionary and sEntiment Reasoner) for efficient and accurate sentiment scoring:
+
+```python
+def analyze_reviews(self, reviews: List[str], callback=None) -> List[Dict[str, Any]]:
+    """
+    Analyze multiple reviews in batch for faster processing.
+    Always uses local processing for sentiment analysis to avoid Gemini API rate limits.
+    """
+    # Log the start of processing
+    logger.info(f"Starting sentiment analysis for {len(reviews)} reviews")
+    logger.info(f"Processing {len(reviews)} reviews with parallel processing")
+
+    # Check cache first and collect uncached reviews
+    results = []
+    uncached_reviews = []
+    uncached_indices = []
+
+    for i, review in enumerate(reviews):
+        cached_result = self._get_from_cache(review, "sentiment")
+        if cached_result:
+            results.append(cached_result)
+        else:
+            results.append(None)  # Placeholder
+            uncached_reviews.append(review)
+            uncached_indices.append(i)
+
+    # If all reviews were cached, return results
+    if not uncached_reviews:
+        logger.info("All reviews found in cache, returning cached results")
+        return results
+
+    # Calculate optimal batch size based on review length
+    avg_review_length = sum(len(review) for review in uncached_reviews) / len(uncached_reviews)
+
+    # Adjust batch size based on average review length for better performance
+    if avg_review_length < 100:
+        batch_size = 500  # Very short reviews
+    elif avg_review_length < 200:
+        batch_size = 300  # Short reviews
+    elif avg_review_length < 500:
+        batch_size = 200  # Medium reviews
+    else:
+        batch_size = 150  # Long reviews
+
+    logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
+
+    # Process all batches with memory optimization using local processing
+    for i, (batch, indices) in enumerate(zip(batches, batch_indices)):
+        batch_start_time = time.time()
+        logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
+
+        # Process this batch with local sentiment analysis
+        batch_results = self._parallel_local_sentiment_analysis(batch)
+
+        # Update results and cache
+        for j, result in enumerate(batch_results):
+            original_index = indices[j]
+            results[original_index] = result
+            # Only cache if text is not too long to save memory
+            if len(batch[j]) < 5000:  # Only cache texts shorter than 5000 chars
+                self._add_to_cache(batch[j], result, "sentiment")
+
+    return results
+```
+
+The local sentiment analysis implementation uses VADER for efficient processing:
 
 ```python
 def _local_sentiment_analysis(self, text: str) -> Dict[str, Any]:
     """
-    Perform local sentiment analysis when Gemini API is unavailable.
+    Perform local sentiment analysis.
     """
     # Check cache first for faster processing
     cached_result = self._get_from_cache(text, "sentiment")
@@ -571,7 +652,14 @@ Use double quotes for all keys and string values.
 
 ### Batch Size Optimization
 
-Optimal batch sizes depend on the length and complexity of the reviews:
+Optimal batch sizes for local sentiment analysis depend on the length and complexity of the reviews:
+
+- **Very Short Reviews** (< 100 chars): 500 reviews per batch
+- **Short Reviews** (100-200 chars): 300 reviews per batch
+- **Medium Reviews** (200-500 chars): 200 reviews per batch
+- **Long Reviews** (> 500 chars): 150 reviews per batch
+
+For Gemini API insight extraction (which still uses the API), smaller batch sizes are recommended:
 
 - **Very Short Reviews** (< 100 chars): 100 reviews per batch
 - **Short Reviews** (100-200 chars): 75 reviews per batch

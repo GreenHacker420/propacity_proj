@@ -10,17 +10,22 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 - **Advanced sentiment analysis** with:
   - Context-aware sentiment detection
   - Aspect-based sentiment analysis
-  - Google Gemini API integration for faster processing
+  - Local processing for sentiment analysis to avoid API rate limits
+  - Parallel processing for improved performance
 - **Categorize feedback** into:
   - Pain points
   - Feature requests
   - Positive feedback
 - **Extract keywords** from feedback
 - **Generate summaries** with top insights
+- **Weekly summaries** for product prioritization
 - **Download PDF reports** with actionable priorities for product managers
-- **Track analysis history** and view past results
+- **Track analysis history** and view past results with full summaries
 - **Dynamic processing time estimation** based on historical data
+- **Real-time progress updates** via WebSockets
 - **Advanced Gemini API integration** with:
+  - Local processing for sentiment analysis to avoid API rate limits
+  - Gemini API for insight extraction and summary generation
   - Intelligent batch processing for optimal performance
   - Adaptive request throttling to prevent rate limits
   - Robust JSON parsing with multiple fallback mechanisms
@@ -28,11 +33,13 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
   - Circuit breaker pattern for graceful degradation
 - **Multi-language support** for analyzing reviews in different languages
 - **MongoDB Atlas integration** for scalable data storage
+- **Optimized batch processing** with dynamic batch sizing and RAM usage optimization
 
 ## Tech Stack
 
 ### Backend
 - **FastAPI** (Python)
+- **WebSockets** for real-time progress updates
 - **MongoDB Atlas** for database storage
 - **Hugging Face Transformers** for sentiment analysis
 - **Google Gemini API** for advanced text processing (using Gemini 2.0 Flash model)
@@ -40,6 +47,7 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 - **PyMongo** for MongoDB integration
 - **google-play-scraper** for Play Store data
 - **WeasyPrint** for PDF generation
+- **Parallel processing** for improved performance
 
 ### Frontend
 - **React**
@@ -47,8 +55,10 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 - **Headless UI** components
 - **Framer Motion** for animations
 - **Axios** for API calls
+- **WebSocket** for real-time updates
 - **React Dropzone** for file uploads
 - **React Markdown** for rendering markdown content
+- **Recharts** for data visualization
 
 ## Project Structure
 
@@ -63,17 +73,27 @@ product-review-analyzer/
 │   │   └── utils/        # Utilities and exceptions
 │   ├── download_nltk_resources.py  # NLTK setup script
 │   ├── requirements.txt  # Python dependencies
-│   └── main.py          # FastAPI application entry
+│   └── main.py           # FastAPI application entry
 ├── frontend/             # React frontend
 │   ├── src/
 │   │   ├── components/   # React components
+│   │   ├── config/       # Configuration files
 │   │   ├── hooks/        # Custom React hooks
 │   │   ├── services/     # API services
 │   │   ├── App.jsx       # Main application component
 │   │   ├── index.css     # Tailwind CSS styles
 │   │   └── main.jsx      # Entry point
 │   ├── tailwind.config.js # Tailwind configuration
+│   ├── vite.config.js    # Vite configuration
 │   └── package.json      # Node dependencies
+├── docs/                 # Documentation
+│   ├── api/              # API documentation
+│   ├── deployment/       # Deployment guides
+│   ├── features/         # Feature documentation
+│   └── troubleshooting/  # Troubleshooting guides
+├── scripts/              # Deployment and setup scripts
+│   ├── aws/              # AWS deployment scripts
+│   └── build.sh          # Production build script
 ├── package.json          # Root package.json with scripts
 └── README.md             # Project documentation
 ```
@@ -81,9 +101,10 @@ product-review-analyzer/
 ## Prerequisites
 
 - **Node.js** (v16+)
-- **Python** (v3.9+, avoid 3.13 due to compatibility issues)
+- **Python** (v3.11 recommended, avoid 3.13 due to compatibility issues)
 - **MongoDB Atlas** account
 - **Google Gemini API** key (for enhanced analysis)
+- **AWS Account** (for AWS deployment)
 
 ## Setup Instructions
 
@@ -104,12 +125,33 @@ npm run dev
 For production deployment on AWS:
 
 1. Configure your AWS credentials and EC2 instance
-2. Run the deployment script:
+2. Run the AWS setup script:
+```bash
+cd scripts/aws
+./setup_aws.sh -h <EC2_HOST> -k <PEM_FILE>
+```
+
+3. Build the production version:
+```bash
+./build.sh
+```
+
+4. Deploy to AWS:
 ```bash
 ./deploy_aws.sh -h <EC2_HOST> -k <PEM_FILE>
 ```
 
 For detailed AWS deployment instructions, see the [AWS Deployment Guide](docs/deployment/aws.md).
+
+### Railway Deployment
+
+For deployment on Railway:
+
+1. Connect your GitHub repository to Railway
+2. Configure the environment variables in Railway dashboard
+3. Deploy the application
+
+For detailed Railway deployment instructions, see the [Railway Deployment Guide](docs/deployment/railway.md).
 
 ### Manual Setup
 
@@ -167,6 +209,7 @@ npm run dev
 - `POST /api/analyze` - Analyze a list of reviews
 - `POST /api/summary` - Generate a summary from analyzed reviews
 - `POST /api/summary/pdf` - Generate a PDF report
+- `POST /api/summary/weekly` - Generate a weekly summary
 
 ### Advanced Sentiment Analysis
 - `POST /api/sentiment/analyze` - Analyze sentiment of a single text with advanced features
@@ -193,6 +236,11 @@ npm run dev
 - `POST /api/auth/register` - Register a new user
 - `POST /api/auth/login` - Login and get access token
 - `GET /api/auth/me` - Get current user information
+- `GET /api/auth/user` - Get user information from token
+
+### WebSocket Endpoints
+- `ws://localhost:8000/ws/batch-progress` - Real-time batch processing progress updates
+- `ws://localhost:8000/ws/sentiment-progress` - Real-time sentiment analysis progress updates
 
 ## Environment Variables
 
@@ -204,8 +252,14 @@ npm run dev
 ### Optional Variables
 - `GEMINI_API_KEY` - Google Gemini API key for enhanced analysis
 - `GEMINI_MODEL` - Gemini model to use (default: gemini-2.0-flash)
+- `GEMINI_BATCH_SIZE` - Number of reviews to process in each Gemini API batch (default: 10)
+- `GEMINI_SLOW_THRESHOLD` - Threshold in seconds to detect slow Gemini API processing (default: 5)
 - `PORT` - Server port (default: 8000)
 - `HOST` - Server host (default: 0.0.0.0)
+- `DEBUG` - Enable debug mode (default: False)
+- `ENABLE_WEBSOCKETS` - Enable WebSocket support (default: True)
+- `PARALLEL_PROCESSING` - Enable parallel processing (default: True)
+- `MAX_WORKERS` - Maximum number of worker threads for parallel processing (default: 4)
 
 ## API Documentation
 
@@ -257,8 +311,10 @@ The application uses the following MongoDB collections:
 - `users` - User accounts and authentication information
 - `reviews` - Analyzed reviews and feedback
 - `keywords` - Extracted keywords and their frequencies
-- `analysis_history` - History of analysis operations
+- `analysis_history` - History of analysis operations with full summaries
 - `processing_times` - Processing time records for estimation
+- `weekly_summaries` - Weekly summaries for product prioritization
+- `batch_progress` - Batch processing progress tracking
 
 ## License
 

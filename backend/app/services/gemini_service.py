@@ -493,6 +493,7 @@ class GeminiService:
     def analyze_reviews(self, reviews: List[str], callback=None) -> List[Dict[str, Any]]:
         """
         Analyze multiple reviews in batch for faster processing.
+        Always uses local processing for sentiment analysis to avoid Gemini API rate limits.
 
         Args:
             reviews: List of review texts to analyze
@@ -504,6 +505,7 @@ class GeminiService:
         """
         # Log the start of processing
         logger.info(f"Starting sentiment analysis for {len(reviews)} reviews")
+        logger.info(f"Processing {len(reviews)} reviews with parallel processing")
 
         # Check cache first and collect uncached reviews
         results = []
@@ -511,8 +513,9 @@ class GeminiService:
         uncached_indices = []
 
         for i, review in enumerate(reviews):
-            if review in self.sentiment_cache:
-                results.append(self.sentiment_cache[review])
+            cached_result = self._get_from_cache(review, "sentiment")
+            if cached_result:
+                results.append(cached_result)
             else:
                 results.append(None)  # Placeholder
                 uncached_reviews.append(review)
@@ -520,82 +523,74 @@ class GeminiService:
 
         # If all reviews were cached, return results
         if not uncached_reviews:
+            logger.info("All reviews found in cache, returning cached results")
             return results
 
-        # Process all reviews with parallel processing
-        if len(uncached_reviews) > 0:
-            logger.info(f"Processing {len(uncached_reviews)} reviews with parallel processing")
+        # Calculate optimal batch size based on review length
+        avg_review_length = sum(len(review) for review in uncached_reviews) / len(uncached_reviews)
 
-            # Calculate optimal batch size based on review length
-            avg_review_length = sum(len(review) for review in uncached_reviews) / len(uncached_reviews)
-
-            # Adjust batch size based on average review length - increased for better performance
-            if avg_review_length < 100:
-                batch_size = 300  # Very short reviews
-            elif avg_review_length < 200:
-                batch_size = 200  # Short reviews
-            elif avg_review_length < 500:
-                batch_size = 150  # Medium reviews
-            else:
-                batch_size = 100  # Long reviews
-
-            logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
-
-            # Split reviews into batches for progress reporting
-            batches = [uncached_reviews[i:i+batch_size] for i in range(0, len(uncached_reviews), batch_size)]
-            batch_indices = [uncached_indices[i:i+batch_size] for i in range(0, len(uncached_indices), batch_size)]
-
-            # Track processing speed for dynamic time estimation
-            start_time = time.time()
-            total_processed = 0
-
-            # Process all batches with memory optimization
-            for i, (batch, indices) in enumerate(zip(batches, batch_indices)):
-                batch_start_time = time.time()
-                logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
-
-                # Process this batch with sentiment analysis
-                batch_results = self._analyze_reviews_single_batch(batch)
-
-                # Calculate batch processing time
-                batch_time = time.time() - batch_start_time
-                total_processed += len(batch)
-
-                # Calculate average processing speed (items per second)
-                elapsed_time = time.time() - start_time
-                avg_speed = total_processed / elapsed_time if elapsed_time > 0 else 0
-
-                # Calculate estimated time remaining
-                remaining_items = len(uncached_reviews) - total_processed
-                estimated_time_remaining = remaining_items / avg_speed if avg_speed > 0 else 0
-
-                logger.info(f"Batch {i+1}/{len(batches)} completed in {batch_time:.2f}s. " +
-                           f"Avg speed: {avg_speed:.2f} items/sec. " +
-                           f"Est. time remaining: {estimated_time_remaining:.1f}s")
-
-                # Update results and cache - with memory optimization
-                for j, result in enumerate(batch_results):
-                    original_index = indices[j]
-                    results[original_index] = result
-                    # Only cache if text is not too long to save memory
-                    if len(batch[j]) < 5000:  # Only cache texts shorter than 5000 chars
-                        self._add_to_cache(batch[j], result, "sentiment")
-
-                # Call progress callback if provided
-                if callback:
-                    callback(i+1, len(batches), batch_time, total_processed, avg_speed, estimated_time_remaining)
-
-                # Force garbage collection to free memory
-                if i % 5 == 0:  # Every 5 batches
-                    import gc
-                    gc.collect()
-
-                # No delay between batches for maximum performance
-
-            return results
+        # Adjust batch size based on average review length for better performance
+        if avg_review_length < 100:
+            batch_size = 500  # Very short reviews
+        elif avg_review_length < 200:
+            batch_size = 300  # Short reviews
+        elif avg_review_length < 500:
+            batch_size = 200  # Medium reviews
         else:
-            # All reviews were cached
-            return results
+            batch_size = 150  # Long reviews
+
+        logger.info(f"Using batch size of {batch_size} for reviews with avg length {avg_review_length:.1f} chars")
+
+        # Split reviews into batches for progress reporting
+        batches = [uncached_reviews[i:i+batch_size] for i in range(0, len(uncached_reviews), batch_size)]
+        batch_indices = [uncached_indices[i:i+batch_size] for i in range(0, len(uncached_indices), batch_size)]
+
+        # Track processing speed for dynamic time estimation
+        start_time = time.time()
+        total_processed = 0
+
+        # Process all batches with memory optimization using local processing
+        for i, (batch, indices) in enumerate(zip(batches, batch_indices)):
+            batch_start_time = time.time()
+            logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} reviews")
+
+            # Process this batch with local sentiment analysis
+            batch_results = self._parallel_local_sentiment_analysis(batch)
+
+            # Calculate batch processing time
+            batch_time = time.time() - batch_start_time
+            total_processed += len(batch)
+
+            # Calculate average processing speed (items per second)
+            elapsed_time = time.time() - start_time
+            avg_speed = total_processed / elapsed_time if elapsed_time > 0 else 0
+
+            # Calculate estimated time remaining
+            remaining_items = len(uncached_reviews) - total_processed
+            estimated_time_remaining = remaining_items / avg_speed if avg_speed > 0 else 0
+
+            logger.info(f"Batch {i+1}/{len(batches)} completed in {batch_time:.2f}s. " +
+                       f"Avg speed: {avg_speed:.2f} items/sec. " +
+                       f"Est. time remaining: {estimated_time_remaining:.1f}s")
+
+            # Update results and cache - with memory optimization
+            for j, result in enumerate(batch_results):
+                original_index = indices[j]
+                results[original_index] = result
+                # Only cache if text is not too long to save memory
+                if len(batch[j]) < 5000:  # Only cache texts shorter than 5000 chars
+                    self._add_to_cache(batch[j], result, "sentiment")
+
+            # Call progress callback if provided
+            if callback:
+                callback(i+1, len(batches), batch_time, total_processed, avg_speed, estimated_time_remaining)
+
+            # Force garbage collection to free memory
+            if i % 5 == 0:  # Every 5 batches
+                import gc
+                gc.collect()
+
+        return results
 
     def _analyze_reviews_single_batch(self, reviews: List[str]) -> List[Dict[str, Any]]:
         """
@@ -1170,30 +1165,26 @@ class GeminiService:
 
             # Improved prompt for more reliable JSON responses
             prompt = f"""
-            Analyze the following product reviews and extract insights. Return a valid JSON object with:
-            - "summary": A brief summary of the overall feedback (required, must not be empty)
-            - "key_points": Array of the most important points mentioned across reviews (required, must contain at least 1 item)
-            - "pain_points": Array of issues or problems mentioned by users (required, must contain at least 1 item)
-            - "feature_requests": Array of features or improvements requested by users (required, must contain at least 1 item)
-            - "positive_aspects": Array of positive aspects mentioned by users (required, must contain at least 1 item)
-
-            Example of expected format:
+            Analyze the following product reviews and extract insights. You MUST return a valid JSON object with EXACTLY this structure:
             {{
-              "summary": "Overall, customers are satisfied with the product but have some concerns about durability.",
-              "key_points": ["Good value for money", "Easy to use interface"],
-              "pain_points": ["Battery life is too short", "Customer service is slow to respond"],
-              "feature_requests": ["Add water resistance", "Include more color options"],
-              "positive_aspects": ["Fast shipping", "High quality materials"]
+              "summary": "A brief summary of the overall feedback",
+              "key_points": ["Point 1", "Point 2", "Point 3"],
+              "pain_points": ["Pain point 1", "Pain point 2", "Pain point 3"],
+              "feature_requests": ["Feature request 1", "Feature request 2", "Feature request 3"],
+              "positive_feedback": ["Positive aspect 1", "Positive aspect 2", "Positive aspect 3"]
             }}
 
-            IMPORTANT:
-            1. All arrays must contain at least one item. If you cannot find specific items for a category,
+            STRICT REQUIREMENTS:
+            1. Return ONLY the JSON object with NO markdown formatting, NO ```json tags, and NO other text.
+            2. Use DOUBLE QUOTES for all keys and string values. DO NOT use single quotes.
+            3. All arrays MUST contain at least one item. If you cannot find specific items for a category,
                include a general statement like "No specific pain points identified" as an item in that array.
-            2. Return ONLY the JSON object with no markdown formatting, no ```json tags, and no other text.
-            3. Use double quotes for all keys and string values.
-            4. Be concise in your summary and limit each array to at most 10 items.
+            4. The "summary" field MUST NOT be empty.
+            5. Be concise in your summary and limit each array to at most 7 items.
+            6. DO NOT include any explanations, notes, or additional text outside the JSON object.
+            7. Ensure the JSON is properly formatted and valid.
 
-            Reviews:
+            Reviews to analyze:
             {reviews_text}
             """
 
@@ -1218,10 +1209,14 @@ class GeminiService:
             try:
                 # Try to parse the response text as JSON directly
                 result = json.loads(response.text)
+                logger.info("Successfully parsed JSON directly from response")
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON decode error in insights: {str(e)}. Attempting to extract JSON from text.")
                 # If parsing fails, try to extract JSON from the text with more robust handling
                 text = response.text.strip()
+
+                # Log the raw response for debugging
+                logger.info(f"Raw response text (first 500 chars): {text[:500]}")
 
                 # Handle markdown code blocks
                 if "```" in text:
@@ -1230,19 +1225,27 @@ class GeminiService:
                     for i, part in enumerate(parts):
                         if i > 0 and i < len(parts) - 1:  # Skip first and last parts (outside ```)
                             # Remove "json" if it's at the start of the code block
-                            if part.startswith("json"):
-                                part = part[4:].strip()
-                            elif part.startswith("JSON"):
-                                part = part[4:].strip()
+                            clean_part = part.strip()
+                            if clean_part.startswith("json"):
+                                clean_part = clean_part[4:].strip()
+                            elif clean_part.startswith("JSON"):
+                                clean_part = clean_part[4:].strip()
+
+                            # Log the extracted part for debugging
+                            logger.info(f"Extracted code block part {i} (first 100 chars): {clean_part[:100]}")
 
                             # Try to parse this part
                             try:
-                                result = json.loads(part.strip())
+                                result = json.loads(clean_part)
                                 logger.info("Successfully extracted JSON from code block in insights")
                                 break
-                            except json.JSONDecodeError:
+                            except json.JSONDecodeError as je:
+                                logger.warning(f"Failed to parse code block part {i}: {str(je)}")
                                 continue
-                else:
+
+                # If code block extraction failed, try other methods
+                if 'result' not in locals():
+                    logger.info("Code block extraction failed, trying bracket detection")
                     # Try to find object brackets if no code blocks
                     try:
                         # Find the first { and last }
@@ -1251,38 +1254,184 @@ class GeminiService:
 
                         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                             json_text = text[start_idx:end_idx+1]
+                            logger.info(f"Extracted JSON using brackets (first 100 chars): {json_text[:100]}")
                             result = json.loads(json_text)
                             logger.info("Successfully extracted JSON object using bracket detection in insights")
                         else:
                             raise ValueError("Could not find valid JSON object brackets")
                     except Exception as bracket_error:
                         logger.error(f"Failed to extract JSON using bracket detection in insights: {str(bracket_error)}")
-                        # Last resort - try to clean up the text and parse again
-                        clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
+
+                        # Try to find JSON array brackets if object detection failed
                         try:
-                            result = json.loads(clean_text)
-                            logger.info("Successfully parsed JSON after quote replacement in insights")
-                        except json.JSONDecodeError:
-                            logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
-                            # Fall back to a default structure
-                            raise ValueError("Failed to parse JSON response from Gemini API for insights")
+                            # Find the first [ and last ]
+                            start_idx = text.find('[')
+                            end_idx = text.rfind(']')
+
+                            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                                json_text = text[start_idx:end_idx+1]
+                                logger.info(f"Extracted JSON array using brackets (first 100 chars): {json_text[:100]}")
+                                # Try to parse as array and convert to expected object format
+                                array_result = json.loads(json_text)
+                                if isinstance(array_result, list):
+                                    # Convert array to object with expected structure
+                                    result = {
+                                        "summary": "Generated from array response",
+                                        "key_points": array_result[:3] if len(array_result) >= 3 else array_result,
+                                        "pain_points": [],
+                                        "feature_requests": [],
+                                        "positive_feedback": []
+                                    }
+                                    logger.info("Successfully extracted and converted JSON array to object format")
+                                else:
+                                    raise ValueError("Extracted JSON is not an array")
+                            else:
+                                # Last resort - try to clean up the text and parse again
+                                clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
+                                try:
+                                    result = json.loads(clean_text)
+                                    logger.info("Successfully parsed JSON after quote replacement in insights")
+                                except json.JSONDecodeError:
+                                    logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
+                                    # Create a default structure from the raw text
+                                    logger.info("Creating fallback structure from raw text")
+
+                                    # Extract potential insights from the raw text
+                                    lines = text.split('\n')
+                                    summary = text[:250] if len(text) > 0 else "No summary available"
+
+                                    # Try to extract key points, pain points, etc. from the text
+                                    key_points = []
+                                    pain_points = []
+                                    feature_requests = []
+                                    positive_aspects = []
+
+                                    for line in lines:
+                                        line = line.strip()
+                                        if not line:
+                                            continue
+
+                                        # Skip lines that are likely headers or formatting
+                                        if line.startswith('#') or line.startswith('```') or line.startswith('{') or line.startswith('}'):
+                                            continue
+
+                                        # Try to categorize the line based on keywords
+                                        lower_line = line.lower()
+                                        if any(term in lower_line for term in ['issue', 'problem', 'bug', 'error', 'crash', 'fail', 'poor']):
+                                            pain_points.append(line)
+                                        elif any(term in lower_line for term in ['request', 'feature', 'add', 'improve', 'enhancement', 'should', 'could']):
+                                            feature_requests.append(line)
+                                        elif any(term in lower_line for term in ['good', 'great', 'excellent', 'like', 'love', 'enjoy', 'positive']):
+                                            positive_aspects.append(line)
+                                        else:
+                                            # If we can't categorize, add to key points
+                                            key_points.append(line)
+
+                                    # Ensure we have at least one item in each category
+                                    if not key_points:
+                                        key_points = ["No specific key points identified"]
+                                    if not pain_points:
+                                        pain_points = ["No specific pain points identified"]
+                                    if not feature_requests:
+                                        feature_requests = ["No specific feature requests identified"]
+                                    if not positive_aspects:
+                                        positive_aspects = ["No specific positive aspects identified"]
+
+                                    # Create the fallback result structure
+                                    result = {
+                                        "summary": summary,
+                                        "key_points": key_points[:5],
+                                        "pain_points": pain_points[:5],
+                                        "feature_requests": feature_requests[:5],
+                                        "positive_feedback": positive_aspects[:5]
+                                    }
+
+                                    logger.info("Created fallback structure from raw text")
+                        except Exception as array_error:
+                            logger.error(f"Failed to extract JSON array: {str(array_error)}")
+                            # Last resort - try to clean up the text and parse again
+                            clean_text = text.replace("'", '"')  # Replace single quotes with double quotes
+                            try:
+                                result = json.loads(clean_text)
+                                logger.info("Successfully parsed JSON after quote replacement in insights")
+                            except json.JSONDecodeError:
+                                logger.error(f"All JSON extraction methods failed for insights. Response text: {text[:500]}...")
+                                # Create a default structure from the raw text
+                                logger.info("Creating fallback structure from raw text")
+
+                                # Extract potential insights from the raw text
+                                lines = text.split('\n')
+                                summary = text[:250] if len(text) > 0 else "No summary available"
+
+                                # Try to extract key points, pain points, etc. from the text
+                                key_points = []
+                                pain_points = []
+                                feature_requests = []
+                                positive_aspects = []
+
+                                for line in lines:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+
+                                    # Skip lines that are likely headers or formatting
+                                    if line.startswith('#') or line.startswith('```') or line.startswith('{') or line.startswith('}'):
+                                        continue
+
+                                    # Try to categorize the line based on keywords
+                                    lower_line = line.lower()
+                                    if any(term in lower_line for term in ['issue', 'problem', 'bug', 'error', 'crash', 'fail', 'poor']):
+                                        pain_points.append(line)
+                                    elif any(term in lower_line for term in ['request', 'feature', 'add', 'improve', 'enhancement', 'should', 'could']):
+                                        feature_requests.append(line)
+                                    elif any(term in lower_line for term in ['good', 'great', 'excellent', 'like', 'love', 'enjoy', 'positive']):
+                                        positive_aspects.append(line)
+                                    else:
+                                        # If we can't categorize, add to key points
+                                        key_points.append(line)
+
+                                # Ensure we have at least one item in each category
+                                if not key_points:
+                                    key_points = ["No specific key points identified"]
+                                if not pain_points:
+                                    pain_points = ["No specific pain points identified"]
+                                if not feature_requests:
+                                    feature_requests = ["No specific feature requests identified"]
+                                if not positive_aspects:
+                                    positive_aspects = ["No specific positive aspects identified"]
+
+                                # Create the fallback result structure
+                                result = {
+                                    "summary": summary,
+                                    "key_points": key_points[:5],
+                                    "pain_points": pain_points[:5],
+                                    "feature_requests": feature_requests[:5],
+                                    "positive_feedback": positive_aspects[:5]
+                                }
+
+                                logger.info("Created fallback structure from raw text")
 
             # Ensure all required fields exist with default values if missing
             if "summary" not in result or not result["summary"]:
                 result["summary"] = "No summary available"
                 logger.warning("Summary field missing or empty in Gemini response")
 
-            for field in ["key_points", "pain_points", "feature_requests", "positive_aspects"]:
+            for field in ["key_points", "pain_points", "feature_requests", "positive_feedback"]:
                 if field not in result or not isinstance(result[field], list):
                     result[field] = []
                     logger.warning(f"{field} field missing or not a list in Gemini response")
+
+            # For backward compatibility - if we have positive_aspects but not positive_feedback
+            if "positive_aspects" in result and "positive_feedback" not in result:
+                result["positive_feedback"] = result.pop("positive_aspects")
+                logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
 
             # Log the parsed result structure
             logger.info(f"Parsed Gemini result structure: {list(result.keys())}")
             logger.info(f"Array lengths - key_points: {len(result.get('key_points', []))}, " +
                        f"pain_points: {len(result.get('pain_points', []))}, " +
                        f"feature_requests: {len(result.get('feature_requests', []))}, " +
-                       f"positive_aspects: {len(result.get('positive_aspects', []))}")
+                       f"positive_feedback: {len(result.get('positive_feedback', []))}")
 
             processing_time = time.time() - start_time
             logger.info(f"Gemini insight extraction completed in {processing_time:.2f} seconds for {len(reviews)} reviews")
@@ -1311,7 +1460,7 @@ class GeminiService:
                 "key_points": ["JSON parsing error occurred"],
                 "pain_points": ["Unable to process API response format"],
                 "feature_requests": ["System will automatically retry with improved parsing"],
-                "positive_aspects": ["Basic analysis still available"]
+                "positive_feedback": ["Basic analysis still available"]
             }
 
         except json.JSONDecodeError as je:
@@ -1328,7 +1477,7 @@ class GeminiService:
                 "key_points": ["JSON format error detected"],
                 "pain_points": ["API returned improperly formatted data"],
                 "feature_requests": ["System will automatically retry with improved parsing"],
-                "positive_aspects": ["Basic analysis still available"]
+                "positive_feedback": ["Basic analysis still available"]
             }
 
         except Exception as e:
@@ -1354,7 +1503,7 @@ class GeminiService:
                     "key_points": ["Rate limit active - temporarily using local processing"],
                     "pain_points": ["API rate limits reached"],
                     "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                    "positive_aspects": ["Basic analysis still available during rate limiting"]
+                    "positive_feedback": ["Basic analysis still available during rate limiting"]
                 }
             else:
                 # For non-rate-limit errors, still increment failure counter but with less weight
@@ -1373,7 +1522,7 @@ class GeminiService:
                     "key_points": ["Error occurred during API processing"],
                     "pain_points": ["API processing error encountered"],
                     "feature_requests": ["System will automatically retry later"],
-                    "positive_aspects": ["Basic analysis still available"]
+                    "positive_feedback": ["Basic analysis still available"]
                 }
 
     def _generate_combined_summary(self, summaries: List[str]) -> str:
@@ -1429,7 +1578,12 @@ class GeminiService:
 
             {combined_text}
 
-            IMPORTANT: Return only the combined summary text with no additional commentary, no introduction, and no markdown formatting.
+            STRICT REQUIREMENTS:
+            1. Return ONLY the combined summary text.
+            2. DO NOT include any additional commentary, introduction, or markdown formatting.
+            3. DO NOT use JSON format or code blocks.
+            4. DO NOT include any headings, bullet points, or structured formatting.
+            5. The response should be plain text only.
             """
 
             # Track API call performance

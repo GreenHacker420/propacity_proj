@@ -37,36 +37,44 @@ const BatchProgress = ({ status, isVisible, onComplete }) => {
     return null;
   }
 
+  // Calculate progress percentage if not provided
+  const progressPercentage = status.progress_percentage ||
+    (status.items_processed && status.total_items
+      ? Math.min(100, (status.items_processed / status.total_items) * 100)
+      : (status.current_batch && status.total_batches
+        ? Math.min(100, (status.current_batch / status.total_batches) * 100)
+        : 0));
+
   return (
     <div
       className="p-4 border border-gray-200 rounded-lg shadow-md bg-white mb-4"
     >
       <div className="flex justify-between items-center mb-2">
-        <p className="font-bold text-gray-800">Processing Reviews</p>
+        <p className="font-bold text-gray-800">Batch Processing</p>
         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-          status.progress_percentage < 100
+          progressPercentage < 100
             ? "bg-blue-100 text-blue-800"
             : "bg-green-100 text-green-800"
         }`}>
-          {status.progress_percentage < 100 ? "Processing" : "Complete"}
+          {progressPercentage < 100 ? "Processing" : "Complete"}
         </span>
       </div>
 
       <div className="w-full bg-gray-200 rounded-md h-2 mb-2">
         <div
-          className={`h-full rounded-md ${status.progress_percentage < 100 ? "bg-blue-500" : "bg-green-500"} ${
-            status.progress_percentage < 100 ? "animate-pulse" : ""
+          className={`h-full rounded-md ${progressPercentage < 100 ? "bg-blue-500" : "bg-green-500"} ${
+            progressPercentage < 100 ? "animate-pulse" : ""
           }`}
-          style={{ width: `${status.progress_percentage}%` }}
+          style={{ width: `${progressPercentage}%` }}
         ></div>
       </div>
 
       <div className="flex justify-between text-sm text-gray-600">
         <p>
-          {status.items_processed} / {status.total_items} items
+          {status.items_processed || 0} / {status.total_items || 0} items
           {status.avg_speed ? ` (${status.avg_speed.toFixed(1)} items/sec)` : ''}
         </p>
-        {timeRemaining && status.progress_percentage < 100 && (
+        {timeRemaining && progressPercentage < 100 && (
           <p>Est. time remaining: {timeRemaining}</p>
         )}
       </div>

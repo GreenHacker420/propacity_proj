@@ -310,6 +310,7 @@ class TextAnalyzer:
     def analyze_texts_batch(self, texts: List[str], metadata_list: Optional[List[Dict[str, Any]]] = None) -> List[Dict]:
         """
         Analyze multiple texts in batch for more efficient processing.
+        Always uses local processing for sentiment analysis to avoid Gemini API rate limits.
 
         Args:
             texts: List of texts to analyze
@@ -323,127 +324,83 @@ class TextAnalyzer:
             metadata_list = [None] * len(texts)
         results = []
 
-        # Check if Gemini API is available
-        gemini_available = (self.gemini_service and
-                           self.gemini_service.available and
-                           self.use_gemini and
-                           texts)
+        start_time = time.time()
+        logger.info(f"Using local processing for batch sentiment analysis of {len(texts)} texts")
 
-        # Only check circuit breaker and rate limit if Gemini is available
-        if gemini_available:
-            circuit_open = self.gemini_service._check_circuit_breaker()
-            rate_limited = self.gemini_service.rate_limited and time.time() < self.gemini_service.rate_limit_reset_time
-            use_gemini = not circuit_open and not rate_limited
-        else:
-            use_gemini = False
-            circuit_open = False
-            rate_limited = False
+        # Process in batches for better performance and progress reporting
+        batch_size = 500
+        total_batches = (len(texts) + batch_size - 1) // batch_size
+        total_processed = 0
+        batch_times = []
 
-        if use_gemini:
-            try:
-                start_time = time.time()
-                logger.info(f"Using Gemini API for batch sentiment analysis of {len(texts)} texts")
+        # Get user ID from metadata if available
+        user_id = None
+        if metadata_list and len(metadata_list) > 0 and metadata_list[0]:
+            user_id = metadata_list[0].get("user_id")
 
-                # Create a callback function to log batch progress and update WebSocket
-                def batch_progress_callback(current_batch, total_batches, batch_time, items_processed, avg_speed, estimated_time_remaining):
-                    # Log progress
-                    logger.info(f"Batch progress: {current_batch}/{total_batches} " +
-                               f"({items_processed}/{len(texts)} items, " +
-                               f"{avg_speed:.2f} items/sec, " +
-                               f"~{estimated_time_remaining:.1f}s remaining)")
+        # Process each batch
+        for i in range(0, len(texts), batch_size):
+            batch_start_time = time.time()
+            current_batch = i // batch_size + 1
 
-                    # Get user ID from metadata if available
-                    user_id = None
-                    if metadata_list and len(metadata_list) > 0 and metadata_list[0]:
-                        user_id = metadata_list[0].get("user_id")
+            # Get the current batch
+            batch_texts = texts[i:i+batch_size]
+            batch_metadata = metadata_list[i:i+batch_size]
 
-                    # If we have a user ID, send WebSocket update
-                    if user_id:
-                        from ..api.websocket_routes import batch_progress_callback as ws_callback
-                        ws_callback(
-                            user_id=user_id,
-                            current_batch=current_batch,
-                            total_batches=total_batches,
-                            batch_time=batch_time,
-                            items_processed=items_processed,
-                            total_items=len(texts),
-                            avg_speed=avg_speed,
-                            estimated_time_remaining=estimated_time_remaining
-                        )
+            logger.info(f"Processing batch {current_batch}/{total_batches} with {len(batch_texts)} reviews")
 
-                # Get sentiment from Gemini in batch with progress reporting
-                gemini_results = self.gemini_service.analyze_reviews(texts, callback=batch_progress_callback)
+            # Process each text in the batch
+            batch_results = []
+            for j, text in enumerate(batch_texts):
+                metadata = batch_metadata[j] if j < len(batch_metadata) else None
+                result = self.analyze_text(text, metadata)
+                batch_results.append(result)
 
-                # Log completion
-                logger.info(f"Batch sentiment analysis completed for all {len(texts)} reviews")
+            # Calculate batch processing time
+            batch_time = time.time() - batch_start_time
+            batch_times.append(batch_time)
+            total_processed += len(batch_texts)
 
-                processing_time = time.time() - start_time
-                logger.info(f"Gemini batch sentiment analysis completed in {processing_time:.2f} seconds")
+            # Calculate average processing speed (items per second)
+            avg_speed = total_processed / sum(batch_times) if sum(batch_times) > 0 else 0
 
-                # Process each result
-                for i, (text, gemini_result) in enumerate(zip(texts, gemini_results)):
-                    # Clean the text
-                    cleaned_text = self.clean_text(text)
+            # Calculate estimated time remaining
+            remaining_items = len(texts) - total_processed
+            estimated_time_remaining = remaining_items / avg_speed if avg_speed > 0 else 0
 
-                    # Get metadata for this text
-                    metadata = metadata_list[i] if i < len(metadata_list) else None
+            # Log progress
+            logger.info(f"Batch progress: {current_batch}/{total_batches} " +
+                       f"({total_processed}/{len(texts)} items, " +
+                       f"{avg_speed:.2f} items/sec, " +
+                       f"~{estimated_time_remaining:.1f}s remaining)")
 
-                    # Extract sentiment data
-                    sentiment_score = gemini_result.get("score", 0.5)
-                    sentiment_label = gemini_result.get("label", "NEUTRAL")
+            # Always send WebSocket update, even if no user ID
+            from ..api.websocket_routes import batch_progress_callback as ws_callback
 
-                    # Extract keywords (still done individually)
-                    keywords = self.extract_keywords(cleaned_text)
+            # Use a default user ID if none provided
+            effective_user_id = user_id if user_id else "dev_user_123"
 
-                    # Use predefined category from metadata if available, otherwise classify
-                    if metadata and 'predefined_category' in metadata:
-                        category = metadata['predefined_category']
-                        logger.info(f"Using predefined category from metadata: {category}")
-                    else:
-                        category = self.classify_feedback(cleaned_text)
+            # Log WebSocket update
+            logger.info(f"Sending batch progress update to WebSocket for user {effective_user_id}")
 
-                    # Create result dictionary
-                    result = {
-                        "sentiment_score": float(sentiment_score),
-                        "sentiment_label": sentiment_label,
-                        "category": category,
-                        "keywords": keywords
-                    }
+            # Send the update
+            ws_callback(
+                user_id=effective_user_id,
+                current_batch=current_batch,
+                total_batches=total_batches,
+                batch_time=batch_time,
+                items_processed=total_processed,
+                total_items=len(texts),
+                avg_speed=avg_speed,
+                estimated_time_remaining=estimated_time_remaining
+            )
 
-                    # Add metadata to result if provided
-                    if metadata:
-                        result["metadata"] = metadata
+            # Add batch results to overall results
+            results.extend(batch_results)
 
-                    # Add to results
-                    results.append(result)
-
-                return results
-
-            except Exception as e:
-                logger.error(f"Error in Gemini batch sentiment analysis: {str(e)}")
-                logger.warning("Falling back to individual analysis")
-                # Fall back to individual analysis
-        else:
-            # Log why we're not using Gemini
-            if not gemini_available:
-                if not self.gemini_service:
-                    logger.info(f"Gemini service not configured. Using local processing for batch analysis of {len(texts)} texts")
-                elif not self.gemini_service.available:
-                    logger.info(f"Gemini API not available. Using local processing for batch analysis of {len(texts)} texts")
-                elif not self.use_gemini:
-                    logger.info(f"Gemini API disabled. Using local processing for batch analysis of {len(texts)} texts")
-                elif not texts:
-                    logger.info("No texts to analyze. Skipping Gemini API call.")
-            elif circuit_open:
-                logger.info(f"Circuit breaker is open. Using local processing for batch analysis of {len(texts)} texts")
-            elif rate_limited:
-                logger.info(f"Rate limited. Using local processing for batch analysis of {len(texts)} texts")
-
-        # Process each text individually
-        for i, text in enumerate(texts):
-            metadata = metadata_list[i] if i < len(metadata_list) else None
-            result = self.analyze_text(text, metadata)
-            results.append(result)
+        # Log completion
+        processing_time = time.time() - start_time
+        logger.info(f"Local batch sentiment analysis completed in {processing_time:.2f} seconds for {len(texts)} reviews")
 
         return results
 
@@ -574,7 +531,12 @@ class TextAnalyzer:
         logger.info(f"Gemini insights keys: {list(gemini_insights.keys())}")
         logger.info(f"Pain points: {len(gemini_insights.get('pain_points', []))}, " +
                    f"Feature requests: {len(gemini_insights.get('feature_requests', []))}, " +
-                   f"Positive aspects: {len(gemini_insights.get('positive_aspects', []))}")
+                   f"Positive feedback: {len(gemini_insights.get('positive_feedback', []))}")
+
+        # For backward compatibility - if we have positive_aspects but not positive_feedback
+        if "positive_aspects" in gemini_insights and "positive_feedback" not in gemini_insights:
+            gemini_insights["positive_feedback"] = gemini_insights.pop("positive_aspects")
+            logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
 
         # Process the insights
         pain_points = []
@@ -626,18 +588,18 @@ class TextAnalyzer:
             if i == 0 and "no specific" not in request.lower():
                 priorities.append(f"Implement requested feature: {request[:100]}...")
 
-        # Add positive aspects
-        positive_aspects_list = gemini_insights.get("positive_aspects", [])
-        if not positive_aspects_list:
-            # Add a default positive aspect if none were found
-            positive_aspects_list = ["No specific positive aspects identified in the reviews"]
+        # Add positive feedback
+        positive_feedback_list = gemini_insights.get("positive_feedback", [])
+        if not positive_feedback_list:
+            # Add a default positive feedback if none were found
+            positive_feedback_list = ["No specific positive feedback identified in the reviews"]
 
-        for i, positive in enumerate(positive_aspects_list):
+        for i, positive in enumerate(positive_feedback_list):
             # Skip empty strings
             if not positive or not isinstance(positive, str):
                 continue
 
-            # Extract keywords from the positive aspect
+            # Extract keywords from the positive feedback
             keywords = self.extract_keywords(positive) if positive else []
 
             positive_feedback.append({
@@ -685,6 +647,7 @@ class TextAnalyzer:
 
         # Create the summary response
         summary_response = {
+            "summary": gemini_insights.get("summary"),
             "pain_points": pain_points[:3],
             "feature_requests": feature_requests[:3],
             "positive_feedback": positive_feedback[:3],
@@ -696,6 +659,25 @@ class TextAnalyzer:
         # Add additional metadata for frontend
         summary_response["reviews"] = reviews
         summary_response["source_type"] = "analysis"
+
+        # Add source_name if available from the first review
+        if reviews and len(reviews) > 0:
+            # Try to get source name from the first review
+            try:
+                if hasattr(reviews[0], 'source') or (isinstance(reviews[0], dict) and 'source' in reviews[0]):
+                    source = reviews[0].source if hasattr(reviews[0], 'source') else reviews[0].get('source')
+                    if source:
+                        summary_response["source_name"] = source
+                elif hasattr(reviews[0], 'metadata') or (isinstance(reviews[0], dict) and 'metadata' in reviews[0]):
+                    metadata = reviews[0].metadata if hasattr(reviews[0], 'metadata') else reviews[0].get('metadata', {})
+                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
+                        summary_response["source_name"] = metadata['source']
+            except Exception as e:
+                logger.warning(f"Error getting source name: {str(e)}")
+
+        # Ensure source_name is set
+        if "source_name" not in summary_response:
+            summary_response["source_name"] = "unknown"
 
         return summary_response
 
@@ -867,5 +849,24 @@ class TextAnalyzer:
         summary_response["reviews"] = reviews
         summary_response["source_type"] = "analysis"
         summary_response["total_reviews"] = review_count
+
+        # Add source_name if available from the first review
+        if reviews and len(reviews) > 0:
+            # Try to get source name from the first review
+            try:
+                if hasattr(reviews[0], 'source') or (isinstance(reviews[0], dict) and 'source' in reviews[0]):
+                    source = reviews[0].source if hasattr(reviews[0], 'source') else reviews[0].get('source')
+                    if source:
+                        summary_response["source_name"] = source
+                elif hasattr(reviews[0], 'metadata') or (isinstance(reviews[0], dict) and 'metadata' in reviews[0]):
+                    metadata = reviews[0].metadata if hasattr(reviews[0], 'metadata') else reviews[0].get('metadata', {})
+                    if metadata and isinstance(metadata, dict) and 'source' in metadata:
+                        summary_response["source_name"] = metadata['source']
+            except Exception as e:
+                logger.warning(f"Error getting source name: {str(e)}")
+
+        # Ensure source_name is set
+        if "source_name" not in summary_response:
+            summary_response["source_name"] = "unknown"
 
         return summary_response

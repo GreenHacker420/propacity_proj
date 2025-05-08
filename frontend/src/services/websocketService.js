@@ -20,11 +20,15 @@ export const initWebSocket = () => {
   // Get the base URL from environment config
   const wsUrl = environment.wsUrl;
 
+  // Log connection attempt
   console.log('Connecting to WebSocket at:', `${wsUrl}/ws?token=${mockToken}`);
 
   // Create WebSocket connection with mock token
   try {
     socket = new WebSocket(`${wsUrl}/ws?token=${mockToken}`);
+
+    // Log connection status to help with debugging
+    console.log('WebSocket connection created, waiting for open event...');
 
     socket.onopen = () => {
       console.log('WebSocket connection established');
