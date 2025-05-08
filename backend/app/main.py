@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 from typing import List, Optional
 import logging
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -27,8 +28,8 @@ from app.mongodb import init_mongodb
 try:
     from app.api.gemini_routes import router as gemini_router
     GEMINI_AVAILABLE = True
-except ImportError:
-    logger.warning("Gemini routes could not be imported. Gemini API will be disabled.")
+except ImportError as e:
+    logger.warning(f"Gemini routes could not be imported: {str(e)}. Gemini API will be disabled.")
     GEMINI_AVAILABLE = False
 
 # Import MongoDB
@@ -40,8 +41,18 @@ try:
     MONGODB_AVAILABLE = True
     logger.info("MongoDB connection successful")
 except Exception as e:
-    logger.error(f"MongoDB connection failed: {str(e)}. Application cannot function without MongoDB.")
-    raise
+    if os.getenv("STRICT_PRODUCTION", "").lower() == "true":
+        logger.error(f"MongoDB connection failed: {str(e)}. Application cannot function without MongoDB in strict production mode.")
+        raise
+    else:
+        # For both development and regular production, we'll use a mock client if needed
+        logger.warning(f"MongoDB connection failed: {str(e)}. Using mock MongoDB client.")
+        os.environ["DEVELOPMENT_MODE"] = "true"
+        # Try again with development mode set
+        from app.mongodb import get_client
+        client = get_client()  # This will return a mock client
+        MONGODB_AVAILABLE = True
+        logger.info("Using mock MongoDB client")
 
 # Set database availability
 DATABASE_AVAILABLE = MONGODB_AVAILABLE
@@ -90,10 +101,26 @@ if MONGODB_AVAILABLE:
 else:
     logger.warning("MongoDB is not available")
 
+# Initialize MongoDB connection using modern lifespan approach
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Startup: initialize MongoDB
+    logger.info("Initializing MongoDB connection...")
+    await init_mongodb()
+    yield
+    # Shutdown: close MongoDB connection
+    logger.info("Closing MongoDB connection...")
+    from app.mongodb import close_connection
+    close_connection()
+
+# Create FastAPI app with lifespan
 app = FastAPI(
     title="Product Pulse API",
     description="AI-Powered Feedback Analysis for Product Managers",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS
@@ -121,11 +148,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
-
-# Initialize MongoDB connection
-@app.on_event("startup")
-async def startup_db_client():
-    await init_mongodb()
 
 # Exception handler
 @app.exception_handler(ReviewSystemException)

@@ -775,7 +775,7 @@ class GeminiService:
                 "key_points": ["No reviews to analyze"],
                 "pain_points": ["No reviews to analyze"],
                 "feature_requests": ["No reviews to analyze"],
-                "positive_aspects": ["No reviews to analyze"]
+                "positive_feedback": ["No reviews to analyze"]
             }
 
         # Check for cached insights using a hash of all reviews
@@ -904,7 +904,7 @@ class GeminiService:
                             "key_points": ["Circuit breaker active - temporarily using local processing"],
                             "pain_points": ["API reliability issues detected"],
                             "feature_requests": ["Will automatically retry Gemini API later"],
-                            "positive_aspects": ["Basic analysis still available during API issues"]
+                            "positive_feedback": ["Basic analysis still available during API issues"]
                         }
                     elif self.rate_limited and time.time() < self.rate_limit_reset_time:
                         logger.info(f"Rate limited. Using fallback for batch {batch_index+1}/{len(batches)}")
@@ -913,7 +913,7 @@ class GeminiService:
                             "key_points": ["Rate limit active - temporarily using local processing"],
                             "pain_points": ["API rate limits reached"],
                             "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                            "positive_aspects": ["Basic analysis still available during rate limiting"]
+                            "positive_feedback": ["Basic analysis still available during rate limiting"]
                         }
 
                     # Process this batch with Gemini API
@@ -945,7 +945,7 @@ class GeminiService:
                             "key_points": ["Error occurred during batch processing"],
                             "pain_points": ["API processing error encountered"],
                             "feature_requests": ["System will automatically retry later"],
-                            "positive_aspects": ["Basic analysis still available"]
+                            "positive_feedback": ["Basic analysis still available"]
                         })
 
                 # Collect results from all batches
@@ -1017,7 +1017,7 @@ class GeminiService:
                     "key_points": all_key_points[:10],  # Limit to top 10
                     "pain_points": all_pain_points[:10],
                     "feature_requests": all_feature_requests[:10],
-                    "positive_aspects": all_positive_aspects[:10]
+                    "positive_feedback": all_positive_aspects[:10]  # Map positive_aspects to positive_feedback
                 }
 
                 processing_time = time.time() - start_time
@@ -1042,7 +1042,7 @@ class GeminiService:
                         "key_points": ["Circuit breaker active - temporarily using local processing"],
                         "pain_points": ["API reliability issues detected"],
                         "feature_requests": ["Will automatically retry Gemini API later"],
-                        "positive_aspects": ["Basic analysis still available during API issues"]
+                        "positive_feedback": ["Basic analysis still available during API issues"]
                     }
                     # Cache the fallback result
                     import hashlib
@@ -1059,7 +1059,7 @@ class GeminiService:
                         "key_points": ["Rate limit active - temporarily using local processing"],
                         "pain_points": ["API rate limits reached"],
                         "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                        "positive_aspects": ["Basic analysis still available during rate limiting"]
+                        "positive_feedback": ["Basic analysis still available during rate limiting"]
                     }
                     # Cache the fallback result
                     import hashlib
@@ -1111,7 +1111,7 @@ class GeminiService:
                     "key_points": ["Rate limit active - temporarily using local processing"],
                     "pain_points": ["API rate limits reached"],
                     "feature_requests": ["Will automatically retry Gemini API when limits reset"],
-                    "positive_aspects": ["Basic analysis still available during rate limiting"],
+                    "positive_feedback": ["Basic analysis still available during rate limiting"],
                     "error": str(e),
                     "error_type": "rate_limit"
                 }
@@ -1133,7 +1133,7 @@ class GeminiService:
                     "key_points": ["Error occurred during API processing"],
                     "pain_points": ["API processing error encountered"],
                     "feature_requests": ["System will automatically retry later"],
-                    "positive_aspects": ["Basic analysis still available"],
+                    "positive_feedback": ["Basic analysis still available"],
                     "error": str(e),
                     "error_type": "general"
                 }
@@ -1173,6 +1173,11 @@ class GeminiService:
               "feature_requests": ["Feature request 1", "Feature request 2", "Feature request 3"],
               "positive_feedback": ["Positive aspect 1", "Positive aspect 2", "Positive aspect 3"]
             }}
+
+            IMPORTANT:
+            1. Use "positive_feedback" as the key, NOT "positive_aspects"
+            2. Return ONLY valid JSON with the exact keys specified above
+            3. Do not include any markdown formatting or code block markers
 
             STRICT REQUIREMENTS:
             1. Return ONLY the JSON object with NO markdown formatting, NO ```json tags, and NO other text.
@@ -1241,7 +1246,20 @@ class GeminiService:
                                 break
                             except json.JSONDecodeError as je:
                                 logger.warning(f"Failed to parse code block part {i}: {str(je)}")
-                                continue
+                                # Try to clean the JSON before parsing
+                                try:
+                                    # Replace single quotes with double quotes
+                                    cleaned_json = clean_part.replace("'", '"')
+                                    # Ensure property names are double-quoted
+                                    for prop in ["summary", "key_points", "pain_points", "feature_requests", "positive_feedback", "positive_aspects"]:
+                                        cleaned_json = cleaned_json.replace(f"{prop}:", f'"{prop}":')
+
+                                    result = json.loads(cleaned_json)
+                                    logger.info(f"Successfully parsed cleaned JSON from code block {i}")
+                                    break
+                                except json.JSONDecodeError as clean_error:
+                                    logger.warning(f"Failed to parse cleaned code block {i}: {str(clean_error)}")
+                                    continue
 
                 # If code block extraction failed, try other methods
                 if 'result' not in locals():
@@ -1343,7 +1361,7 @@ class GeminiService:
                                         "key_points": key_points[:5],
                                         "pain_points": pain_points[:5],
                                         "feature_requests": feature_requests[:5],
-                                        "positive_feedback": positive_aspects[:5]
+                                        "positive_feedback": positive_aspects[:5]  # Map positive_aspects to positive_feedback
                                     }
 
                                     logger.info("Created fallback structure from raw text")
@@ -1406,7 +1424,7 @@ class GeminiService:
                                     "key_points": key_points[:5],
                                     "pain_points": pain_points[:5],
                                     "feature_requests": feature_requests[:5],
-                                    "positive_feedback": positive_aspects[:5]
+                                    "positive_feedback": positive_aspects[:5]  # Map positive_aspects to positive_feedback
                                 }
 
                                 logger.info("Created fallback structure from raw text")
@@ -1422,9 +1440,15 @@ class GeminiService:
                     logger.warning(f"{field} field missing or not a list in Gemini response")
 
             # For backward compatibility - if we have positive_aspects but not positive_feedback
-            if "positive_aspects" in result and "positive_feedback" not in result:
-                result["positive_feedback"] = result.pop("positive_aspects")
-                logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
+            if "positive_aspects" in result:
+                # Always use positive_aspects as positive_feedback for consistency
+                if "positive_feedback" not in result or not result["positive_feedback"]:
+                    result["positive_feedback"] = result.pop("positive_aspects")
+                    logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
+                else:
+                    # If both exist, merge them
+                    result["positive_feedback"].extend(result.pop("positive_aspects"))
+                    logger.info("Merged positive_aspects into positive_feedback for frontend compatibility")
 
             # Log the parsed result structure
             logger.info(f"Parsed Gemini result structure: {list(result.keys())}")

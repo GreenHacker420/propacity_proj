@@ -534,9 +534,15 @@ class TextAnalyzer:
                    f"Positive feedback: {len(gemini_insights.get('positive_feedback', []))}")
 
         # For backward compatibility - if we have positive_aspects but not positive_feedback
-        if "positive_aspects" in gemini_insights and "positive_feedback" not in gemini_insights:
-            gemini_insights["positive_feedback"] = gemini_insights.pop("positive_aspects")
-            logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
+        if "positive_aspects" in gemini_insights:
+            # Always use positive_aspects as positive_feedback for consistency
+            if "positive_feedback" not in gemini_insights or not gemini_insights["positive_feedback"]:
+                gemini_insights["positive_feedback"] = gemini_insights.pop("positive_aspects")
+                logger.info("Mapped positive_aspects to positive_feedback for frontend compatibility")
+            else:
+                # If both exist, merge them
+                gemini_insights["positive_feedback"].extend(gemini_insights.pop("positive_aspects"))
+                logger.info("Merged positive_aspects into positive_feedback for frontend compatibility")
 
         # Process the insights
         pain_points = []
@@ -645,7 +651,7 @@ class TextAnalyzer:
                    f"Positive feedback: {len(positive_feedback)}, " +
                    f"Priorities: {len(priorities)}")
 
-        # Create the summary response
+        # Create the summary response with all required fields for the frontend
         summary_response = {
             "summary": gemini_insights.get("summary"),
             "pain_points": pain_points[:3],
@@ -836,8 +842,9 @@ class TextAnalyzer:
                 "keywords": []
             }]
 
-        # Create the summary response
+        # Create the summary response with all required fields for the frontend
         summary_response = {
+            "summary": "Summary generated from traditional analysis",
             "pain_points": pain_point_items,
             "feature_requests": feature_request_items,
             "positive_feedback": positive_feedback_items,

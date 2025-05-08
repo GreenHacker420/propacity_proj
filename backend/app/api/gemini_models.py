@@ -35,7 +35,7 @@ class GeminiInsightResponse(BaseModel):
     key_points: List[str] = Field(..., description="Key points extracted from reviews")
     pain_points: List[str] = Field(..., description="Pain points mentioned in reviews")
     feature_requests: List[str] = Field(..., description="Feature requests mentioned in reviews")
-    positive_aspects: List[str] = Field(..., description="Positive aspects mentioned in reviews")
+    positive_feedback: List[str] = Field(..., description="Positive feedback mentioned in reviews")
     processing_time: Optional[float] = Field(None, description="Processing time in seconds")
 
 class GeminiStatusResponse(BaseModel):
