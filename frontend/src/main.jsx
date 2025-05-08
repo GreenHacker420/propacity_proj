@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { initWebSocket } from './services/websocketService'
-import './services/authService' // Import to ensure auth token is initialized
 
 // No need for process.env polyfill anymore
 

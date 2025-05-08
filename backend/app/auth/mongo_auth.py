@@ -108,6 +108,23 @@ async def get_current_user_optional(token: str = Depends(oauth2_scheme)):
     except HTTPException:
         return None
 
+# Create a completely optional dependency that doesn't require a token
+async def get_optional_user(token: Optional[str] = None):
+    """Get current user from token if provided, but don't require a token."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        user = get_user(username=username)
+        return user
+    except JWTError:
+        return None
+    except Exception:
+        return None
+
 async def get_current_user_ws(websocket):
     """Get current user from WebSocket connection."""
     try:
@@ -175,7 +192,7 @@ def init_test_user():
     """Initialize a test user for development"""
     users_collection = get_collection("users")
     test_user = users_collection.find_one({"username": "test_user"})
-    
+
     if not test_user:
         # Create test user
         hashed_password = get_password_hash("test_password")
@@ -194,5 +211,5 @@ def init_test_user():
         logging.info("Test user already exists")
 
 # Initialize test user in development mode
-if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
-    init_test_user()
+# Always create a test user for now to ensure scraping works
+init_test_user()

@@ -164,7 +164,7 @@ class Scraper:
             logger.info(f"Scraping Play Store reviews for app ID: {app_id}, limit: {limit}")
 
             # Limit the maximum number of reviews to prevent timeouts
-            max_safe_limit = 200
+            max_safe_limit = 5000
             if limit > max_safe_limit:
                 logger.warning(f"Requested limit {limit} exceeds safe limit. Using {max_safe_limit} instead.")
                 limit = max_safe_limit

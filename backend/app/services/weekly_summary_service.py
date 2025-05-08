@@ -213,6 +213,178 @@ class WeeklySummaryService:
 
         return WeeklySummaryResponse(**summary_dict)
 
+    async def generate_summary_from_reviews(
+        self,
+        reviews: List[Dict[str, Any]],
+        source_type: str,
+        source_name: str,
+        start_date: datetime,
+        end_date: datetime,
+        user_id: Optional[str] = None
+    ) -> WeeklySummaryResponse:
+        """Generate a weekly summary from a list of reviews"""
+        # Analyze sentiment and classify feedback
+        pain_points = []
+        feature_requests = []
+        positive_feedback = []
+        total_sentiment = 0
+        total_reviews = 0
+        keyword_freq: Dict[str, int] = {}
+
+        # Store a limited number of reviews for trend analysis
+        reviews_for_trends = []  # Store a limited number of reviews for trend analysis
+
+        # Process reviews
+        for review in reviews:
+            try:
+                total_reviews += 1
+
+                # Store a limited number of reviews for trend analysis (max 1000)
+                if len(reviews_for_trends) < 1000:
+                    reviews_for_trends.append(review)
+
+                # Get text from review
+                text = review.get("text", "")
+                if not text:
+                    continue
+
+                # Analyze sentiment - use synchronous call
+                sentiment_score = await self.sentiment_analyzer.analyze_sentiment(text)
+                total_sentiment += sentiment_score
+
+                # Classify feedback - use synchronous call
+                feedback_type = await self.text_classifier.classify_feedback(text)
+
+                # Extract keywords - use synchronous call
+                keywords = await self.text_classifier.extract_keywords(text)
+                for keyword in keywords:
+                    keyword_freq[keyword] = keyword_freq.get(keyword, 0) + 1
+            except Exception as e:
+                logger.error(f"Error processing review: {str(e)}")
+                # Use default values if processing fails
+                sentiment_score = 0.0
+                feedback_type = "positive_feedback"
+                keywords = []
+
+            # Create priority item
+            priority_item = PriorityItem(
+                title=text[:50] + "..." if len(text) > 50 else text,
+                description=text,
+                priority_score=self._calculate_priority_score(sentiment_score, feedback_type),
+                category=feedback_type,
+                sentiment_score=sentiment_score,
+                frequency=1,
+                examples=[text]
+            )
+
+            # Add to appropriate list
+            if feedback_type == "pain_point":
+                pain_points.append(priority_item)
+            elif feedback_type == "feature_request":
+                feature_requests.append(priority_item)
+            else:
+                positive_feedback.append(priority_item)
+
+            # Force garbage collection every 1000 reviews to manage memory
+            if total_reviews % 1000 == 0:
+                import gc
+                gc.collect()
+                logger.info(f"Processed {total_reviews} reviews so far")
+
+        # Calculate average sentiment
+        avg_sentiment = total_sentiment / total_reviews if total_reviews > 0 else 0.0
+
+        # Generate trend analysis using the limited set of reviews
+        trend_analysis = self._analyze_trends(reviews_for_trends)
+
+        # Generate recommendations
+        recommendations = self._generate_recommendations(
+            pain_points, feature_requests, positive_feedback, trend_analysis
+        )
+
+        # Convert PriorityItem objects to dictionaries
+        pain_points_dicts = []
+        for item in sorted(pain_points, key=lambda x: x.priority_score, reverse=True)[:5]:
+            if hasattr(item, 'model_dump'):
+                pain_points_dicts.append(item.model_dump())
+            elif hasattr(item, 'dict'):
+                pain_points_dicts.append(item.dict())
+            else:
+                logger.warning(f"Skipping pain point that can't be converted to dict: {type(item)}")
+
+        feature_requests_dicts = []
+        for item in sorted(feature_requests, key=lambda x: x.priority_score, reverse=True)[:5]:
+            if hasattr(item, 'model_dump'):
+                feature_requests_dicts.append(item.model_dump())
+            elif hasattr(item, 'dict'):
+                feature_requests_dicts.append(item.dict())
+            else:
+                logger.warning(f"Skipping feature request that can't be converted to dict: {type(item)}")
+
+        positive_feedback_dicts = []
+        for item in sorted(positive_feedback, key=lambda x: x.priority_score, reverse=True)[:5]:
+            if hasattr(item, 'model_dump'):
+                positive_feedback_dicts.append(item.model_dump())
+            elif hasattr(item, 'dict'):
+                positive_feedback_dicts.append(item.dict())
+            else:
+                logger.warning(f"Skipping positive feedback that can't be converted to dict: {type(item)}")
+
+        # Create weekly summary
+        summary = WeeklySummaryCreate(
+            source_type=source_type,
+            source_name=source_name,
+            start_date=start_date,
+            end_date=end_date,
+            total_reviews=total_reviews,
+            avg_sentiment_score=avg_sentiment,
+            pain_points=pain_points_dicts,
+            feature_requests=feature_requests_dicts,
+            positive_feedback=positive_feedback_dicts,
+            top_keywords=dict(sorted(keyword_freq.items(), key=lambda x: x[1], reverse=True)[:10]),
+            trend_analysis=trend_analysis,
+            recommendations=recommendations
+        )
+
+        # Save to database
+        try:
+            # Use model_dump for Pydantic v2
+            if hasattr(summary, 'model_dump'):
+                summary_dict = summary.model_dump()
+            # Fallback to dict for Pydantic v1 (with deprecation warning)
+            elif hasattr(summary, 'dict'):
+                # Convert to dictionary manually to avoid deprecation warning
+                summary_dict = {k: getattr(summary, k) for k in summary.__dict__ if not k.startswith('_')}
+            else:
+                # Create a basic dictionary if all else fails
+                summary_dict = {
+                    "source_type": source_type,
+                    "source_name": source_name,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "total_reviews": total_reviews,
+                    "avg_sentiment_score": avg_sentiment
+                }
+
+            result = await self.collection.insert_one(summary_dict)
+            summary_dict["_id"] = str(result.inserted_id)
+            summary_dict["created_at"] = datetime.now(timezone.utc)
+            summary_dict["user_id"] = user_id
+        except Exception as e:
+            logger.error(f"Error saving summary to database: {str(e)}")
+            # Create a basic dictionary if all else fails
+            summary_dict = {
+                "_id": str(ObjectId()),
+                "created_at": datetime.now(timezone.utc),
+                "user_id": user_id,
+                "source_type": source_type,
+                "source_name": source_name,
+                "total_reviews": total_reviews,
+                "avg_sentiment_score": avg_sentiment
+            }
+
+        return WeeklySummaryResponse(**summary_dict)
+
     async def get_priority_insights(
         self,
         source_type: Optional[str] = None,
@@ -232,8 +404,9 @@ class WeeklySummaryService:
                 "$gte": datetime.now(timezone.utc) - timedelta(days=days)
             }
 
-            # Check if we're using a mock object
-            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true":
+            # In production mode, always use real data
+            # Check if we're using a mock object only if DEVELOPMENT_MODE is true
+            if os.getenv("DEVELOPMENT_MODE", "").lower() == "true" and hasattr(self.collection, '_mock_obj'):
                 # In development mode with mock, return mock data
                 logger.info("Using mock MongoDB client in development mode - generating mock data")
                 # Create mock summaries for development testing
@@ -434,6 +607,7 @@ class WeeklySummaryService:
                 )[:5]
 
             # If in development mode and using mock data, generate mock insights with Gemini
+            # Only use mock data if DEVELOPMENT_MODE is true and we have mock summaries
             if os.getenv("DEVELOPMENT_MODE", "").lower() == "true" and any(str(s.get("_id", "")).startswith("mock_id") for s in summaries):
                 logger.info("Generating mock insights from mock data using Gemini")
 

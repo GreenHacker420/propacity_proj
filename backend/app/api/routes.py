@@ -15,7 +15,7 @@ from ..services.scraper import Scraper
 from ..services.visualization import Visualizer
 from ..mongodb import get_collection
 from ..models.db_models import Review as DBReview, Keyword, ReviewModel
-from ..auth.mongo_auth import get_current_active_user, get_current_user_optional
+from ..auth.mongo_auth import get_current_active_user, get_current_user_optional, get_optional_user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -523,14 +523,16 @@ async def upload_csv(file: UploadFile = File(...)):
 async def scrape_data(
     source: str = Query(..., description="Data source (twitter, playstore)"),
     query: Optional[str] = Query(None, description="Search query or app URL"),
-    limit: int = Query(50, ge=1, le=5000, description="Maximum number of reviews to fetch"),
-    current_user: Optional[dict] = Depends(get_current_active_user)
+    limit: int = Query(50, ge=1, le=5000, description="Maximum number of reviews to fetch")
 ):
     """
     Scrape and analyze data from online sources
+
+    This endpoint does not require authentication.
     """
-    # Get user ID for WebSocket updates
-    user_id = str(current_user["_id"]) if current_user else None
+    # Use a mock user ID for WebSocket updates
+    user_id = "dev_user_123"
+    logger.info(f"Scraping with user_id: {user_id} (no authentication required)")
     try:
         if source == 'playstore':
             if not query:

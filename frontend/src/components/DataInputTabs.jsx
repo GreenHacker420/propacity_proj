@@ -27,7 +27,7 @@ const DataInputTabs = ({
   // Scraping state
   const [scrapeSource, setScrapeSource] = useState('playstore');
   const [scrapeQuery, setScrapeQuery] = useState('');
-  const [scrapeLimit, setScrapeLimit] = useState(50);
+  const [scrapeLimit, setScrapeLimit] = useState(50); // Default to minimum value of 50
 
   // Handle file selection
   const handleFileSelected = (selectedFile) => {
@@ -43,6 +43,12 @@ const DataInputTabs = ({
 
   // Handle scrape
   const handleScrape = () => {
+    // Validate the review limit
+    if (scrapeLimit < 50 || scrapeLimit > 5000) {
+      alert('Number of reviews must be between 50 and 5000');
+      return;
+    }
+
     if (scrapeQuery) {
       // For Play Store, validate the URL format
       if (scrapeSource === 'playstore') {
@@ -176,11 +182,24 @@ const DataInputTabs = ({
                 <input
                   type="number"
                   value={scrapeLimit}
-                  onChange={(e) => setScrapeLimit(parseInt(e.target.value))}
-                  min="1"
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value);
+                    // Ensure the value is within the valid range
+                    if (value < 50) {
+                      setScrapeLimit(50);
+                    } else if (value > 5000) {
+                      setScrapeLimit(5000);
+                    } else {
+                      setScrapeLimit(value);
+                    }
+                  }}
+                  min="50"
                   max="5000"
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500"
                 />
+                <p className="mt-1 text-sm text-gray-500">
+                  Enter a value between 50 and 5000 reviews
+                </p>
               </div>
 
               <button
