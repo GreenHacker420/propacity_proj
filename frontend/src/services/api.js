@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { getToken } from './authService';
 
-// Always use the direct backend URL to avoid proxy issues in development
-// In production, we'll add the /api prefix to each endpoint
-const baseURL = import.meta.env.VITE_API_URL || '';
+// In production, the backend is mounted at /api and the API routes have an /api prefix
+// So we need to use /api/api/ for all endpoints
+const baseURL = '';
 
 // Configure axios
 axios.defaults.baseURL = baseURL;
@@ -23,9 +23,9 @@ let apiStatus = {
 
 // List of endpoints that don't require authentication
 const noAuthEndpoints = [
-  '/api/gemini/status',
-  '/api/history',
-  '/api/weekly/priorities'
+  '/api/api/gemini/status',
+  '/api/api/history',
+  '/api/api/weekly/priorities'
 ];
 
 // Add request interceptor for authentication
