@@ -1,0 +1,20 @@
+[Unit]
+Description=Product Review Analyzer
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/propacity_proj
+# Use the updated serve.py file with increased request size limits
+ExecStart=/home/ubuntu/propacity_proj/venv/bin/python serve_updated.py
+Restart=always
+Environment="PYTHONPATH=/home/ubuntu/propacity_proj:/home/ubuntu/propacity_proj/backend"
+# Add environment variables for performance tuning
+Environment="DEVELOPMENT_MODE=false"
+# Increase timeouts
+Environment="UVICORN_TIMEOUT=600"
+# Increase request size limits
+Environment="MAX_REQUEST_SIZE=50000000"
+
+[Install]
+WantedBy=multi-user.target
