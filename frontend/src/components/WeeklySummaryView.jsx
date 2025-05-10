@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line
@@ -19,6 +19,8 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+// Cache duration in milliseconds (10 minutes)
+const CACHE_DURATION = 10 * 60 * 1000;
 
 /**
  * Component for displaying the weekly summary of user feedback for product managers
@@ -30,11 +32,57 @@ const WeeklySummaryView = ({ sourceType = null }) => {
   const [activeTab, setActiveTab] = useState('priorities');
   const [timeRange, setTimeRange] = useState('week');
 
+  // Cache for storing insights by source type and time range
+  const insightsCache = useRef({});
+
+  // State to track when data was last refreshed
+  const [lastRefreshed, setLastRefreshed] = useState(null);
+
+  // Function to get cache key
+  const getCacheKey = (source, range) => `${source || 'all'}_${range}`;
+
+  // Function to format the last refreshed time
+  const formatLastRefreshed = (timestamp) => {
+    if (!timestamp) return 'Never';
+
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   useEffect(() => {
     const fetchInsights = async () => {
       try {
         setLoading(true);
+
+        // Check if we have cached data for this source type and time range
+        const cacheKey = getCacheKey(sourceType, timeRange);
+        const cachedData = insightsCache.current[cacheKey];
+
+        // Use cached data if it exists and is not expired
+        if (cachedData &&
+            cachedData.timestamp &&
+            (Date.now() - cachedData.timestamp < CACHE_DURATION)) {
+          console.log('Using cached weekly summary data');
+          setInsights(cachedData.data);
+          setLastRefreshed(cachedData.timestamp);
+          setLoading(false);
+          return;
+        }
+
+        // Fetch new data if no cache or cache expired
+        console.log('Fetching fresh weekly summary data');
         const data = await api.getPriorityInsights(sourceType, timeRange);
+
+        // Get current timestamp
+        const currentTime = Date.now();
+
+        // Update the cache with new data
+        insightsCache.current[cacheKey] = {
+          data: data,
+          timestamp: currentTime
+        };
+
+        setLastRefreshed(currentTime);
         setInsights(data);
       } catch (err) {
         console.error('Error fetching priority insights:', err);
@@ -73,7 +121,7 @@ const WeeklySummaryView = ({ sourceType = null }) => {
 
   return (
     <div className="space-y-8">
-      {/* Time Range Filter */}
+      {/* Time Range Filter and Refresh Button */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex space-x-4">
           <select
@@ -86,6 +134,46 @@ const WeeklySummaryView = ({ sourceType = null }) => {
             <option value="quarter">Last Quarter</option>
             <option value="year">Last Year</option>
           </select>
+
+          <button
+            onClick={() => {
+              // Clear cache for current source and time range
+              const cacheKey = getCacheKey(sourceType, timeRange);
+              delete insightsCache.current[cacheKey];
+
+              // Force re-fetch by setting loading to true
+              setLoading(true);
+
+              // Re-fetch data (will be triggered by the loading state change)
+              const fetchInsights = async () => {
+                try {
+                  const data = await api.getPriorityInsights(sourceType, timeRange);
+                  const currentTime = Date.now();
+                  insightsCache.current[cacheKey] = {
+                    data: data,
+                    timestamp: currentTime
+                  };
+                  setLastRefreshed(currentTime);
+                  setInsights(data);
+                } catch (err) {
+                  console.error('Error refreshing priority insights:', err);
+                  setError('Failed to refresh weekly summary data.');
+                } finally {
+                  setLoading(false);
+                }
+              };
+
+              fetchInsights();
+            }}
+            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+          >
+            Refresh Data
+          </button>
+        </div>
+
+        {/* Last refreshed indicator */}
+        <div className="text-sm text-gray-500">
+          Last refreshed: {formatLastRefreshed(lastRefreshed)}
         </div>
       </div>
 
@@ -172,9 +260,9 @@ const WeeklySummaryView = ({ sourceType = null }) => {
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-xl font-semibold mb-6">Sentiment Trends</h3>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={Object.entries(insights.sentiment_trends).map(([category, score]) => ({ 
-                category: category.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '), 
-                score 
+              <BarChart data={Object.entries(insights.sentiment_trends).map(([category, score]) => ({
+                category: category.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+                score
               }))}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="category" />
