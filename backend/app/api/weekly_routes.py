@@ -184,6 +184,23 @@ def get_priority_insights(
                         # Create insights directly from the summary data
                         insights_data = {}
 
+                        # Add overall summary section
+                        if "summary" in summary_data and summary_data["summary"]:
+                            insights_data["overall_summary"] = summary_data["summary"]
+                        elif "source_type" in summary_data and "source_name" in summary_data:
+                            insights_data["overall_summary"] = f"Analysis of {summary_data['source_name']} data from {summary_data['source_type']} source."
+                        else:
+                            insights_data["overall_summary"] = f"Analysis of {source_type or 'unknown'} data."
+
+                        # Add total reviews count if available
+                        if "total_reviews" in summary_data:
+                            insights_data["overall_summary"] += f" Based on {summary_data['total_reviews']} reviews."
+
+                        # Add average sentiment if available
+                        if "average_sentiment" in summary_data:
+                            sentiment_desc = "positive" if summary_data["average_sentiment"] > 0.6 else "neutral" if summary_data["average_sentiment"] > 0.4 else "negative"
+                            insights_data["overall_summary"] += f" Overall sentiment is {sentiment_desc} ({summary_data['average_sentiment']:.2f})."
+
                         # Create high priority items from pain points and feature requests
                         insights_data["high_priority_items"] = []
 
@@ -307,20 +324,50 @@ def get_priority_insights(
                         # Add risk areas based on pain points
                         if "pain_points" in summary_data and summary_data["pain_points"]:
                             for item in summary_data["pain_points"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["risk_areas"].append(f"Unaddressed issue: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["risk_areas"].append(f"Unaddressed issue: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["risk_areas"].append(f"Unaddressed issue: {item}")
 
                         # Add opportunity areas based on feature requests
                         if "feature_requests" in summary_data and summary_data["feature_requests"]:
                             for item in summary_data["feature_requests"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["opportunity_areas"].append(f"Potential enhancement: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["opportunity_areas"].append(f"Potential enhancement: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["opportunity_areas"].append(f"Potential enhancement: {item}")
 
                         # Add opportunity areas based on positive feedback
                         if "positive_feedback" in summary_data and summary_data["positive_feedback"]:
                             for item in summary_data["positive_feedback"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["opportunity_areas"].append(f"Leverage strength: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["opportunity_areas"].append(f"Leverage strength: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["opportunity_areas"].append(f"Leverage strength: {item}")
 
                         # Fill in any missing fields with mock data
                         mock_data = _generate_meaningful_mock_insights(source_type)
@@ -598,34 +645,117 @@ def get_priority_insights(
                         # Try to extract insights from the summary data
                         insights_data = {}
 
+                        # Add overall summary section
+                        if "summary" in summary_data and summary_data["summary"]:
+                            insights_data["overall_summary"] = summary_data["summary"]
+                        elif "source_type" in summary_data and "source_name" in summary_data:
+                            insights_data["overall_summary"] = f"Analysis of {summary_data['source_name']} data from {summary_data['source_type']} source."
+                        else:
+                            insights_data["overall_summary"] = f"Analysis of {source_type or 'unknown'} data."
+
+                        # Add total reviews count if available
+                        if "total_reviews" in summary_data:
+                            insights_data["overall_summary"] += f" Based on {summary_data['total_reviews']} reviews."
+
+                        # Add average sentiment if available
+                        if "average_sentiment" in summary_data:
+                            sentiment_desc = "positive" if summary_data["average_sentiment"] > 0.6 else "neutral" if summary_data["average_sentiment"] > 0.4 else "negative"
+                            insights_data["overall_summary"] += f" Overall sentiment is {sentiment_desc} ({summary_data['average_sentiment']:.2f})."
+
+                        # Log the structure of pain points and feature requests for debugging
+                        if "pain_points" in summary_data and summary_data["pain_points"]:
+                            logger.info(f"Pain points structure: {summary_data['pain_points'][0] if summary_data['pain_points'] else 'empty'}")
+                        if "feature_requests" in summary_data and summary_data["feature_requests"]:
+                            logger.info(f"Feature requests structure: {summary_data['feature_requests'][0] if summary_data['feature_requests'] else 'empty'}")
+
                         # Extract pain points
                         if "pain_points" in summary_data and summary_data["pain_points"]:
                             insights_data["high_priority_items"] = []
                             for item in summary_data["pain_points"]:
-                                insights_data["high_priority_items"].append({
-                                    "title": item.get("title", "Issue"),
-                                    "description": item.get("description", "Description"),
-                                    "priority_score": item.get("priority_score", 0.8),
-                                    "category": "pain_point",
-                                    "sentiment_score": item.get("sentiment_score", 0.2),
-                                    "frequency": item.get("frequency", 5),
-                                    "examples": item.get("examples", ["Example"])
-                                })
+                                # Handle different possible structures
+                                if isinstance(item, dict):
+                                    # Extract title and description
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    description = item.get("description", None)
+                                    if not description and "text" in item:
+                                        description = item.get("text")
+
+                                    # Extract examples
+                                    examples = item.get("examples", [])
+                                    if not examples and "text" in item:
+                                        examples = [item.get("text")]
+
+                                    # Create the high priority item
+                                    insights_data["high_priority_items"].append({
+                                        "title": title or "Issue",
+                                        "description": description or "Description",
+                                        "priority_score": item.get("priority_score", 0.8),
+                                        "category": "pain_point",
+                                        "sentiment_score": item.get("sentiment_score", 0.2),
+                                        "frequency": item.get("frequency", 5),
+                                        "examples": examples or ["Example"]
+                                    })
+                                elif isinstance(item, str):
+                                    # If the item is a string, use it as both title and description
+                                    insights_data["high_priority_items"].append({
+                                        "title": item,
+                                        "description": item,
+                                        "priority_score": 0.8,
+                                        "category": "pain_point",
+                                        "sentiment_score": 0.2,
+                                        "frequency": 5,
+                                        "examples": [item]
+                                    })
 
                         # Extract feature requests
                         if "feature_requests" in summary_data and summary_data["feature_requests"]:
                             if "high_priority_items" not in insights_data:
                                 insights_data["high_priority_items"] = []
                             for item in summary_data["feature_requests"]:
-                                insights_data["high_priority_items"].append({
-                                    "title": item.get("title", "Feature Request"),
-                                    "description": item.get("description", "Description"),
-                                    "priority_score": item.get("priority_score", 0.7),
-                                    "category": "feature_request",
-                                    "sentiment_score": item.get("sentiment_score", 0.6),
-                                    "frequency": item.get("frequency", 3),
-                                    "examples": item.get("examples", ["Example"])
-                                })
+                                # Handle different possible structures
+                                if isinstance(item, dict):
+                                    # Extract title and description
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    description = item.get("description", None)
+                                    if not description and "text" in item:
+                                        description = item.get("text")
+
+                                    # Extract examples
+                                    examples = item.get("examples", [])
+                                    if not examples and "text" in item:
+                                        examples = [item.get("text")]
+
+                                    # Create the high priority item
+                                    insights_data["high_priority_items"].append({
+                                        "title": title or "Feature Request",
+                                        "description": description or "Description",
+                                        "priority_score": item.get("priority_score", 0.7),
+                                        "category": "feature_request",
+                                        "sentiment_score": item.get("sentiment_score", 0.6),
+                                        "frequency": item.get("frequency", 3),
+                                        "examples": examples or ["Example"]
+                                    })
+                                elif isinstance(item, str):
+                                    # If the item is a string, use it as both title and description
+                                    insights_data["high_priority_items"].append({
+                                        "title": item,
+                                        "description": item,
+                                        "priority_score": 0.7,
+                                        "category": "feature_request",
+                                        "sentiment_score": 0.6,
+                                        "frequency": 3,
+                                        "examples": [item]
+                                    })
 
                         # Extract trending topics from keywords
                         if "top_keywords" in summary_data and summary_data["top_keywords"]:
@@ -771,6 +901,23 @@ def get_priority_insights(
                         # Create insights directly from the summary data
                         insights_data = {}
 
+                        # Add overall summary section
+                        if "summary" in summary_data and summary_data["summary"]:
+                            insights_data["overall_summary"] = summary_data["summary"]
+                        elif "source_type" in summary_data and "source_name" in summary_data:
+                            insights_data["overall_summary"] = f"Analysis of {summary_data['source_name']} data from {summary_data['source_type']} source."
+                        else:
+                            insights_data["overall_summary"] = f"Analysis of {source_type or 'unknown'} data."
+
+                        # Add total reviews count if available
+                        if "total_reviews" in summary_data:
+                            insights_data["overall_summary"] += f" Based on {summary_data['total_reviews']} reviews."
+
+                        # Add average sentiment if available
+                        if "average_sentiment" in summary_data:
+                            sentiment_desc = "positive" if summary_data["average_sentiment"] > 0.6 else "neutral" if summary_data["average_sentiment"] > 0.4 else "negative"
+                            insights_data["overall_summary"] += f" Overall sentiment is {sentiment_desc} ({summary_data['average_sentiment']:.2f})."
+
                         # Create high priority items from pain points and feature requests
                         insights_data["high_priority_items"] = []
 
@@ -894,20 +1041,50 @@ def get_priority_insights(
                         # Add risk areas based on pain points
                         if "pain_points" in summary_data and summary_data["pain_points"]:
                             for item in summary_data["pain_points"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["risk_areas"].append(f"Unaddressed issue: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["risk_areas"].append(f"Unaddressed issue: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["risk_areas"].append(f"Unaddressed issue: {item}")
 
                         # Add opportunity areas based on feature requests
                         if "feature_requests" in summary_data and summary_data["feature_requests"]:
                             for item in summary_data["feature_requests"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["opportunity_areas"].append(f"Potential enhancement: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["opportunity_areas"].append(f"Potential enhancement: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["opportunity_areas"].append(f"Potential enhancement: {item}")
 
                         # Add opportunity areas based on positive feedback
                         if "positive_feedback" in summary_data and summary_data["positive_feedback"]:
                             for item in summary_data["positive_feedback"]:
-                                if isinstance(item, dict) and "title" in item:
-                                    insights_data["opportunity_areas"].append(f"Leverage strength: {item['title']}")
+                                if isinstance(item, dict):
+                                    # Extract title
+                                    title = item.get("title", None)
+                                    if not title and "text" in item:
+                                        title = item.get("text")
+                                    if not title and "description" in item:
+                                        title = item.get("description").split(".")[0] if item.get("description") else None
+
+                                    if title:
+                                        insights_data["opportunity_areas"].append(f"Leverage strength: {title}")
+                                elif isinstance(item, str):
+                                    insights_data["opportunity_areas"].append(f"Leverage strength: {item}")
 
                         # Fill in any missing fields with mock data
                         mock_data = _generate_meaningful_mock_insights(source_type)
@@ -1133,6 +1310,7 @@ def _generate_meaningful_mock_insights(source_type: Optional[str] = None) -> Dic
     source = source_type or "unknown"
 
     return {
+        "overall_summary": f"Analysis of {source} data. This is a mock summary generated because actual data was not available. The insights below are generic and not based on real user feedback.",
         "high_priority_items": [
             {
                 "title": f"Improve {source} user experience",
