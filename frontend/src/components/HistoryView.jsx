@@ -97,13 +97,8 @@ const HistoryView = ({
       // Call API to delete the analysis
       await api.deleteAnalysis(selectedItemId);
 
-      // If onRefresh is provided, use it to refresh the history data
-      if (onRefresh) {
-        await onRefresh();
-      } else {
-        // Otherwise, update local state to remove the deleted item
-        setHistory(history.filter(item => item._id !== selectedItemId));
-      }
+      // Update local state to remove the deleted item without refreshing the entire history
+      setHistory(history.filter(item => item._id !== selectedItemId));
 
       setShowDeleteConfirm(false);
       setSelectedItemId(null);
