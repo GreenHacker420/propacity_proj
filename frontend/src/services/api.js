@@ -21,11 +21,11 @@ let apiStatus = {
 // No request interceptor for authentication
 
 // List of endpoints that don't require authentication
+// Remove /api prefix as it's already included in the baseURL
 const noAuthEndpoints = [
-  '/api/gemini/status',
   '/gemini/status',
-  '/api/history',
-  '/api/weekly/priorities'
+  '/history',
+  '/weekly/priorities'
 ];
 
 // Add request interceptor for authentication
@@ -47,7 +47,7 @@ axios.interceptors.request.use(
         console.warn('No auth token found for request'); // Debug log
 
         // For scrape endpoint, add a hardcoded token if no token is found
-        if (config.url.includes('/api/scrape')) {
+        if (config.url.includes('/scrape')) {
           const hardcodedToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXIiLCJpZCI6IjY4MWMyZWNmZWJjOGQxYjI2MGY3ODIzMyIsImV4cCI6MTc0NjY5MDE3MX0.lPpWE0oRzHjK4RkaNgerzIQS6p5myiV_q7uDo9TVItk';
           config.headers.Authorization = `Bearer ${hardcodedToken}`;
           console.log('Added hardcoded token for scrape endpoint');
@@ -115,7 +115,7 @@ const api = {
       formData.append('username', username);
       formData.append('password', password);
 
-      const response = await axios.post('/api/auth/token', formData, {
+      const response = await axios.post('/auth/token', formData, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
         }
@@ -137,7 +137,7 @@ const api = {
   getGeminiStatus: async () => {
     try {
       // Use a specific configuration to indicate this doesn't need authentication
-      const response = await axios.get('/api/gemini/status', {
+      const response = await axios.get('/gemini/status', {
         headers: {
           // Explicitly remove any Authorization header
           'Authorization': ''
@@ -162,7 +162,7 @@ const api = {
     formData.append('file', file);
 
     // Use axios with baseURL configuration
-    const response = await axios.post('/api/upload', formData, {
+    const response = await axios.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
         // Explicitly remove any Authorization header
@@ -184,7 +184,7 @@ const api = {
     console.log('Scraping data with params:', params);
 
     // No authentication required for scraping
-    const response = await axios.get('/api/scrape', { params });
+    const response = await axios.get('/scrape', { params });
 
     console.log('Scrape response status:', response.status);
     return response.data;
@@ -192,7 +192,7 @@ const api = {
 
   // Perform sentiment analysis on a batch of texts
   analyzeSentiment: async (texts) => {
-    const response = await axios.post('/api/sentiment/batch', {
+    const response = await axios.post('/sentiment/batch', {
       texts: Array.isArray(texts) ? texts : [texts]
     });
     return response.data;
@@ -200,7 +200,7 @@ const api = {
 
   // Categorize reviews
   categorizeReviews: async (reviews) => {
-    const response = await axios.post('/api/categorize', {
+    const response = await axios.post('/categorize', {
       reviews: Array.isArray(reviews) ? reviews : [reviews]
     });
     return response.data;
@@ -209,7 +209,7 @@ const api = {
   // Generate summary from analyzed reviews
   generateSummary: async (reviewsData) => {
     try {
-      const response = await axios.post('/api/summary', reviewsData);
+      const response = await axios.post('/summary', reviewsData);
       return response.data;
     } catch (error) {
       console.error('Error generating summary:', error);
@@ -223,7 +223,7 @@ const api = {
     const endTime = Date.now();
     const durationSeconds = (endTime - startTime) / 1000;
 
-    await axios.post('/api/timing/record', {
+    await axios.post('/timing/record', {
       operation,
       file_name: fileName,
       source,
@@ -237,14 +237,14 @@ const api = {
 
   // Get estimated processing time
   getEstimatedTime: async (operation, recordCount) => {
-    const response = await axios.get(`/api/timing/estimate/${operation}?record_count=${recordCount}`);
+    const response = await axios.get(`/timing/estimate/${operation}?record_count=${recordCount}`);
     return response.data;
   },
 
   // Record analysis history
   recordAnalysisHistory: async (sourceType, sourceName, reviewsData, summary) => {
     // Use axios with baseURL configuration
-    await axios.post('/api/history', {
+    await axios.post('/history', {
       source_type: sourceType,
       source_name: sourceName,
       record_count: reviewsData.length,
@@ -258,7 +258,7 @@ const api = {
 
   // Download PDF report
   downloadPDF: async (analyzedReviews) => {
-    const response = await axios.post('/api/summary/pdf', analyzedReviews, {
+    const response = await axios.post('/summary/pdf', analyzedReviews, {
       responseType: 'blob'
     });
 
@@ -275,7 +275,7 @@ const api = {
   // Get prioritized insights from recent feedback
   getPriorityInsights: async (sourceType, timeRange = 'week') => {
     try {
-      const response = await axios.get('/api/weekly/priorities', {
+      const response = await axios.get('/weekly/priorities', {
         params: {
           source_type: sourceType,
           time_range: timeRange
@@ -294,7 +294,7 @@ const api = {
 
   // Create a weekly summary for a specific source
   createWeeklySummary: async (sourceType, sourceName) => {
-    const response = await axios.post('/api/weekly/summary', null, {
+    const response = await axios.post('/weekly/summary', null, {
       params: { source_type: sourceType, source_name: sourceName }
     });
     return response.data;
@@ -302,14 +302,14 @@ const api = {
 
   // Get a specific weekly summary by ID
   getWeeklySummary: async (summaryId) => {
-    const response = await axios.get(`/api/weekly/summary/${summaryId}`);
+    const response = await axios.get(`/weekly/summary/${summaryId}`);
     return response.data;
   },
 
   // Get all weekly summaries, optionally filtered by source type
   getWeeklySummaries: async (sourceType = null) => {
     const params = sourceType ? { source_type: sourceType } : {};
-    const response = await axios.get('/api/weekly/summaries', { params });
+    const response = await axios.get('/weekly/summaries', { params });
     return response.data;
   },
 
@@ -317,7 +317,7 @@ const api = {
   getAnalysisHistory: async () => {
     try {
       // Use a specific configuration to indicate this doesn't need authentication
-      const response = await axios.get('/api/history', {
+      const response = await axios.get('/history', {
         headers: {
           // Explicitly remove any Authorization header
           'Authorization': ''
@@ -333,7 +333,7 @@ const api = {
   // Get specific analysis by ID
   getAnalysisById: async (analysisId) => {
     try {
-      const response = await axios.get(`/api/history/${analysisId}`);
+      const response = await axios.get(`/history/${analysisId}`);
       return response.data;
     } catch (error) {
       console.error(`Error fetching analysis with ID ${analysisId}:`, error);
@@ -344,7 +344,7 @@ const api = {
   // Delete analysis by ID
   deleteAnalysis: async (analysisId) => {
     try {
-      await axios.delete(`/api/history/${analysisId}`);
+      await axios.delete(`/history/${analysisId}`);
       return true;
     } catch (error) {
       console.error(`Error deleting analysis with ID ${analysisId}:`, error);
@@ -354,7 +354,7 @@ const api = {
 
   async getAnalytics() {
     try {
-      const response = await axios.get('/api/analytics');
+      const response = await axios.get('/analytics');
       return response.data;
     } catch (error) {
       console.error('Error fetching analytics:', error);
@@ -364,7 +364,7 @@ const api = {
 
   async getPriorityInsights(sourceType, timeRange = 'week') {
     try {
-      const response = await axios.get('/api/weekly/priorities', {
+      const response = await axios.get('/weekly/priorities', {
         params: {
           source_type: sourceType,
           time_range: timeRange
@@ -383,7 +383,7 @@ const api = {
 
   async getReviews(filters = {}) {
     try {
-      const response = await axios.get('/api/reviews', { params: filters });
+      const response = await axios.get('/reviews', { params: filters });
       return response.data;
     } catch (error) {
       console.error('Error fetching reviews:', error);
@@ -393,7 +393,7 @@ const api = {
 
   async scrapeReviews(source) {
     try {
-      const response = await axios.post('/api/scrape', { source });
+      const response = await axios.post('/scrape', { source });
       return response.data;
     } catch (error) {
       console.error('Error scraping reviews:', error);
@@ -404,7 +404,7 @@ const api = {
   async downloadPDF(filters = {}) {
     try {
       // Use the same endpoint as the downloadPDF method above
-      const response = await axios.post('/api/summary/pdf', filters, {
+      const response = await axios.post('/summary/pdf', filters, {
         responseType: 'blob'
       });
 
