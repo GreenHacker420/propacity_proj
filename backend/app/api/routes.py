@@ -15,7 +15,7 @@ from ..services.scraper import Scraper
 from ..services.visualization import Visualizer
 from ..mongodb import get_collection
 from ..models.db_models import Review as DBReview, Keyword, ReviewModel
-from ..auth.mongo_auth import get_current_active_user, get_current_user_optional, get_optional_user
+from ..auth.mongo_auth import get_current_active_user, get_current_user_optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

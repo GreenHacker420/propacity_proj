@@ -25,7 +25,7 @@ router = APIRouter(
 weekly_service = WeeklySummaryService()
 
 @router.post("/summary", response_model=WeeklySummaryResponse)
-async def create_weekly_summary(
+def create_weekly_summary(
     source_type: str,
     source_name: str,
     current_user: Optional[dict] = None
@@ -39,7 +39,7 @@ async def create_weekly_summary(
         start_date = end_date - timedelta(days=7)
 
         # Generate summary
-        summary = await weekly_service.generate_summary(
+        summary = weekly_service.generate_summary(
             source_type=source_type,
             source_name=source_name,
             start_date=start_date,
@@ -53,7 +53,7 @@ async def create_weekly_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/summary/{summary_id}", response_model=WeeklySummaryResponse)
-async def get_weekly_summary(
+def get_weekly_summary(
     summary_id: str,
     current_user: Optional[dict] = None
 ):
@@ -61,7 +61,7 @@ async def get_weekly_summary(
     Get a specific weekly summary by ID
     """
     try:
-        summary = await weekly_service.get_summary_by_id(summary_id)
+        summary = weekly_service.get_summary_by_id(summary_id)
         if not summary:
             raise HTTPException(status_code=404, detail="Weekly summary not found")
         return summary
@@ -70,7 +70,7 @@ async def get_weekly_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/summaries", response_model=List[WeeklySummaryResponse])
-async def get_weekly_summaries(
+def get_weekly_summaries(
     source_type: Optional[str] = None,
     current_user: Optional[dict] = None
 ):
@@ -78,7 +78,7 @@ async def get_weekly_summaries(
     Get all weekly summaries, optionally filtered by source type
     """
     try:
-        summaries = await weekly_service.get_summaries(
+        summaries = weekly_service.get_summaries(
             source_type=source_type,
             user_id=current_user.get("id") if current_user else None
         )
@@ -88,7 +88,7 @@ async def get_weekly_summaries(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/priorities", response_model=Dict[str, Any])
-async def get_priority_insights(
+def get_priority_insights(
     source_type: Optional[str] = None,
     time_range: str = "week",
     current_user: Optional[dict] = None
@@ -103,7 +103,7 @@ async def get_priority_insights(
             logger.info(f"Getting insights for source_type: {source_type}, time_range: {time_range}")
 
             # Try to get insights from existing data
-            insights = await weekly_service.get_priority_insights(
+            insights = weekly_service.get_priority_insights(
                 source_type=source_type,
                 user_id=current_user.get("id") if current_user else None,
                 days=_get_days_from_time_range(time_range)
@@ -124,7 +124,7 @@ async def get_priority_insights(
             logger.info("No existing insights found, generating from recent analysis")
 
             # Get the most recent analysis from the database
-            reviews_collection = await get_collection("reviews")
+            reviews_collection = get_collection("reviews")
 
             # Query parameters
             query = {}
@@ -133,14 +133,14 @@ async def get_priority_insights(
 
             # Find the most recent reviews
             cursor = reviews_collection.find(query).sort("timestamp", -1).limit(100)
-            reviews = await cursor.to_list(length=None)
+            reviews = list(cursor)
 
             if not reviews:
                 logger.warning("No reviews found in database to generate insights")
                 # Try to get reviews from analysis history
-                history_collection = await get_collection("analysis_history")
+                history_collection = get_collection("analysis_history")
                 history_cursor = history_collection.find().sort("timestamp", -1).limit(1)
-                history_items = await history_cursor.to_list(length=None)
+                history_items = list(history_cursor)
 
                 if history_items and "reviews" in history_items[0]:
                     logger.info("Using reviews from analysis history")
@@ -154,7 +154,7 @@ async def get_priority_insights(
                 start_date = end_date - timedelta(days=_get_days_from_time_range(time_range))
 
                 # Generate the summary
-                summary = await weekly_service.generate_summary_from_reviews(
+                summary = weekly_service.generate_summary_from_reviews(
                     reviews=reviews,
                     source_type=source_type or "unknown",
                     source_name=source_type or "unknown",
@@ -164,7 +164,7 @@ async def get_priority_insights(
                 )
 
                 # Get insights from the new summary
-                insights = await weekly_service.get_priority_insights(
+                insights = weekly_service.get_priority_insights(
                     source_type=source_type,
                     user_id=current_user.get("id") if current_user else None,
                     days=_get_days_from_time_range(time_range)
@@ -270,7 +270,7 @@ def _generate_meaningful_mock_insights(source_type: Optional[str] = None) -> Dic
     }
 
 @router.post("/generate", response_model=Dict[str, Any])
-async def generate_weekly_summary(
+def generate_weekly_summary(
     source_type: Optional[str] = None,
     current_user: Optional[dict] = None
 ):
@@ -283,7 +283,7 @@ async def generate_weekly_summary(
         start_date = end_date - timedelta(days=7)
 
         # Generate the summary
-        summary = await weekly_service.generate_summary(
+        summary = weekly_service.generate_summary(
             source_type=source_type,
             source_name=source_type,  # Use the source type as the source name
             start_date=start_date,
@@ -293,7 +293,7 @@ async def generate_weekly_summary(
         # Get insights from the summary
         try:
             # Get insights directly from the summary
-            insights = await weekly_service.get_priority_insights(
+            insights = weekly_service.get_priority_insights(
                 source_type=source_type,
                 user_id=current_user.get("id") if current_user else None
             )
@@ -343,14 +343,14 @@ async def generate_weekly_summary(
         }
 
 @router.get("/test")
-async def test_weekly_summary():
+def test_weekly_summary():
     """
     Comprehensive test endpoint to verify MongoDB connection and weekly summary functionality.
     Creates a test summary and verifies all operations.
     """
     try:
         # 1. Test MongoDB connection
-        status = await get_connection_status()
+        status = get_connection_status()
         if status["status"] == "error":
             raise HTTPException(
                 status_code=500,
@@ -422,7 +422,7 @@ async def test_weekly_summary():
             "feedback_type": "positive_feedback",
             "keywords": ["test", "good", "feature"]
         }
-        await reviews_collection.insert_one(test_review)
+        reviews_collection.insert_one(test_review)
 
         # Now save the test summary directly to the database
         collection = get_collection("weekly_summaries")
@@ -433,12 +433,12 @@ async def test_weekly_summary():
             # For backward compatibility with older Pydantic versions
             summary_dict = test_summary.dict()
         summary_dict["created_at"] = datetime.now(timezone.utc)
-        result = await collection.insert_one(summary_dict)
+        result = collection.insert_one(summary_dict)
         summary_id = str(result.inserted_id)
         summary_dict["_id"] = summary_id
 
         # 4. Test getting the summary
-        retrieved_summary = await weekly_service.get_summary_by_id(summary_id)
+        retrieved_summary = weekly_service.get_summary_by_id(summary_id)
         if not retrieved_summary:
             raise HTTPException(
                 status_code=500,
@@ -446,7 +446,7 @@ async def test_weekly_summary():
             )
 
         # 5. Test getting all summaries
-        all_summaries = await weekly_service.get_summaries(source_type="test")
+        all_summaries = weekly_service.get_summaries(source_type="test")
         if not all_summaries:
             raise HTTPException(
                 status_code=500,
@@ -454,7 +454,7 @@ async def test_weekly_summary():
             )
 
         # 6. Test getting priority insights
-        insights = await weekly_service.get_priority_insights(source_type="test")
+        insights = weekly_service.get_priority_insights(source_type="test")
         if not insights:
             raise HTTPException(
                 status_code=500,
@@ -463,8 +463,8 @@ async def test_weekly_summary():
 
         # 7. Clean up test data
         collection = get_collection("weekly_summaries")
-        await collection.delete_one({"_id": ObjectId(summary_id)})
-        await reviews_collection.delete_one({"source_type": "test", "source_name": "test_app"})
+        collection.delete_one({"_id": ObjectId(summary_id)})
+        reviews_collection.delete_one({"source_type": "test", "source_name": "test_app"})
 
         # Convert Pydantic models to dictionaries
         if hasattr(retrieved_summary, 'model_dump'):

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
-from motor.motor_asyncio import AsyncIOMotorCollection
+# Remove motor import and use pymongo instead
+from pymongo.collection import Collection
 from ..models.weekly_summary import WeeklySummaryCreate, WeeklySummaryResponse, PriorityItem, PriorityInsights
 from ..mongodb import get_collection
 from ..services.sentiment_analyzer import SentimentAnalyzer
@@ -13,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 class WeeklySummaryService:
     def __init__(self):
-        self.collection: AsyncIOMotorCollection = get_collection("weekly_summaries")
+        self.collection = get_collection("weekly_summaries")
         self.sentiment_analyzer = SentimentAnalyzer()
         self.text_classifier = TextClassifier()
 
-    async def generate_summary(
+    def generate_summary(
         self,
         source_type: str,
         source_name: str,
@@ -47,7 +48,7 @@ class WeeklySummaryService:
         cursor = reviews_collection.find(query).batch_size(500)
 
         # Count documents first to check if we have any reviews
-        review_count = await reviews_collection.count_documents(query)
+        review_count = reviews_collection.count_documents(query)
 
         logger.info(f"Found {review_count} reviews for query: {query}")
 
@@ -68,7 +69,7 @@ class WeeklySummaryService:
         reviews_for_trends = []  # Store a limited number of reviews for trend analysis
 
         # Process reviews in batches using the cursor
-        async for review in cursor:
+        for review in cursor:
             try:
                 total_reviews += 1
 
@@ -77,14 +78,14 @@ class WeeklySummaryService:
                     reviews_for_trends.append(review)
 
                 # Analyze sentiment - use synchronous call
-                sentiment_score = await self.sentiment_analyzer.analyze_sentiment(review["text"])
+                sentiment_score = self.sentiment_analyzer.analyze_sentiment(review["text"])
                 total_sentiment += sentiment_score
 
                 # Classify feedback - use synchronous call
-                feedback_type = await self.text_classifier.classify_feedback(review["text"])
+                feedback_type = self.text_classifier.classify_feedback(review["text"])
 
                 # Extract keywords - use synchronous call
-                keywords = await self.text_classifier.extract_keywords(review["text"])
+                keywords = self.text_classifier.extract_keywords(review["text"])
                 for keyword in keywords:
                     keyword_freq[keyword] = keyword_freq.get(keyword, 0) + 1
             except Exception as e:
@@ -194,7 +195,7 @@ class WeeklySummaryService:
                     "avg_sentiment_score": avg_sentiment
                 }
 
-            result = await self.collection.insert_one(summary_dict)
+            result = self.collection.insert_one(summary_dict)
             summary_dict["_id"] = str(result.inserted_id)
             summary_dict["created_at"] = datetime.now(timezone.utc)
             summary_dict["user_id"] = user_id
@@ -213,7 +214,7 @@ class WeeklySummaryService:
 
         return WeeklySummaryResponse(**summary_dict)
 
-    async def generate_summary_from_reviews(
+    def generate_summary_from_reviews(
         self,
         reviews: List[Dict[str, Any]],
         source_type: str,
@@ -249,14 +250,14 @@ class WeeklySummaryService:
                     continue
 
                 # Analyze sentiment - use synchronous call
-                sentiment_score = await self.sentiment_analyzer.analyze_sentiment(text)
+                sentiment_score = self.sentiment_analyzer.analyze_sentiment(text)
                 total_sentiment += sentiment_score
 
                 # Classify feedback - use synchronous call
-                feedback_type = await self.text_classifier.classify_feedback(text)
+                feedback_type = self.text_classifier.classify_feedback(text)
 
                 # Extract keywords - use synchronous call
-                keywords = await self.text_classifier.extract_keywords(text)
+                keywords = self.text_classifier.extract_keywords(text)
                 for keyword in keywords:
                     keyword_freq[keyword] = keyword_freq.get(keyword, 0) + 1
             except Exception as e:
@@ -366,7 +367,7 @@ class WeeklySummaryService:
                     "avg_sentiment_score": avg_sentiment
                 }
 
-            result = await self.collection.insert_one(summary_dict)
+            result = self.collection.insert_one(summary_dict)
             summary_dict["_id"] = str(result.inserted_id)
             summary_dict["created_at"] = datetime.now(timezone.utc)
             summary_dict["user_id"] = user_id
@@ -385,7 +386,7 @@ class WeeklySummaryService:
 
         return WeeklySummaryResponse(**summary_dict)
 
-    async def get_priority_insights(
+    def get_priority_insights(
         self,
         source_type: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -464,10 +465,10 @@ class WeeklySummaryService:
                 ]
             else:
                 try:
-                    # Use find method without await
+                    # Use find method with list() to get all results
                     cursor = self.collection.find(query)
-                    # Use to_list with await
-                    summaries = await cursor.to_list(length=None)
+                    # Convert cursor to list
+                    summaries = list(cursor)
                 except Exception as e:
                     logger.error(f"Error querying MongoDB: {str(e)}")
                     # Return empty list if there's an error
@@ -840,11 +841,11 @@ class WeeklySummaryService:
 
         return recommendations
 
-    async def get_summary_by_id(self, summary_id: str) -> Optional[WeeklySummaryResponse]:
+    def get_summary_by_id(self, summary_id: str) -> Optional[WeeklySummaryResponse]:
         """Get a specific weekly summary by ID"""
         try:
-            # Use find_one with await
-            summary = await self.collection.find_one({"_id": ObjectId(summary_id)})
+            # Use find_one without await
+            summary = self.collection.find_one({"_id": ObjectId(summary_id)})
             if summary:
                 summary["_id"] = str(summary["_id"])
                 return WeeklySummaryResponse(**summary)
@@ -853,7 +854,7 @@ class WeeklySummaryService:
             logger.error(f"Error getting summary by ID: {str(e)}")
             raise
 
-    async def get_summaries(
+    def get_summaries(
         self,
         source_type: Optional[str] = None,
         user_id: Optional[str] = None
@@ -866,10 +867,10 @@ class WeeklySummaryService:
             if user_id:
                 query["user_id"] = user_id
 
-            # Use find method without await
+            # Use find method with list() to get all results
             cursor = self.collection.find(query)
-            # Use to_list with await
-            summaries = await cursor.to_list(length=None)
+            # Convert cursor to list
+            summaries = list(cursor)
 
             # Convert ObjectId to string and create response objects
             for summary in summaries:
