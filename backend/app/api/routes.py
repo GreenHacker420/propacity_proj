@@ -521,12 +521,12 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @router.get("/scrape", response_model=List[ReviewResponse])
 async def scrape_data(
-    source: str = Query(..., description="Data source (twitter, playstore)"),
+    source: str = Query(..., description="Data source (playstore, twitter)"),
     query: Optional[str] = Query(None, description="Search query or app URL"),
     limit: int = Query(50, ge=1, le=5000, description="Maximum number of reviews to fetch")
 ):
     """
-    Scrape and analyze data from online sources
+    Scrape and analyze data from online sources (Play Store or Twitter)
 
     This endpoint does not require authentication.
     """
