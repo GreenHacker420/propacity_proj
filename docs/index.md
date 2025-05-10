@@ -7,7 +7,8 @@ The Product Review Analyzer is a comprehensive tool designed to help product man
 ### Key Capabilities
 
 - Upload and analyze CSV files containing product reviews
-- Scrape reviews from online sources (Twitter, Play Store)
+- Scrape reviews from online sources (Play Store)
+- Generate Twitter data using Gemini API with fallback mechanisms
 - Perform sentiment analysis using both local models and Google's Gemini API
 - Generate summaries of key pain points, feature requests, and positive feedback
 - Visualize sentiment trends and common themes
@@ -59,6 +60,7 @@ The Product Review Analyzer follows a client-server architecture:
 ## Documentation Sections
 
 - [Features](features/index.md): Detailed information about all features
+  - [Twitter Data Generation](features/twitter_scraping.md): Twitter data generation and scraping
   - [Batch Processing](features/batch-processing.md): Batch processing and progress reporting
   - [WebSocket Support](features/websocket.md): Real-time progress updates
   - [User Guide](features/user-guide.md): Instructions for using the application
@@ -68,7 +70,8 @@ The Product Review Analyzer follows a client-server architecture:
   - [Railway Deployment](deployment/railway.md): Deploy on Railway
   - [Installation Guide](deployment/installation.md): Local installation instructions
 - [Gemini API Integration](gemini_api_integration.md): Google Gemini API integration details
-- [Troubleshooting](troubleshooting/index.md): Common issues and solutions
+- [MongoDB Integration](mongodb_integration.md): MongoDB integration and fallback mechanisms
+- [Troubleshooting](troubleshooting/common_issues.md): Common issues and solutions
 
 ## Getting Started
 

@@ -6,6 +6,7 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 
 - **Upload CSV files** with user feedback
 - **Scrape real-time feedback** from Google Play Store
+- **Generate Twitter data** using Gemini API with fallback mechanisms
 - **Analyze GitHub repositories** for issues and discussions
 - **Advanced sentiment analysis** with:
   - Context-aware sentiment detection
@@ -46,6 +47,7 @@ A powerful AI-driven application for analyzing product reviews, user feedback, a
 - **NLTK** and **spaCy** for NLP tasks
 - **PyMongo** for MongoDB integration
 - **google-play-scraper** for Play Store data
+- **Gemini API** for Twitter data generation
 - **WeasyPrint** for PDF generation
 - **Parallel processing** for improved performance
 
@@ -225,7 +227,7 @@ npm run dev
 
 ### Core Endpoints
 - `POST /api/upload` - Upload and analyze a CSV file
-- `GET /api/scrape` - Scrape and analyze data from Google Play Store
+- `GET /api/scrape` - Scrape and analyze data from Google Play Store or Twitter
 - `POST /api/analyze` - Analyze a list of reviews
 - `POST /api/summary` - Generate a summary from analyzed reviews
 - `POST /api/summary/pdf` - Generate a PDF report
@@ -265,7 +267,7 @@ npm run dev
 ## Environment Variables
 
 ### Required Variables
-- `MONGODB_URI` - MongoDB Atlas connection string
+- `MONGODB_URI` - MongoDB Atlas connection string (falls back to mock client in development mode)
 - `SECRET_KEY` - Secret key for JWT token generation
 - `ACCESS_TOKEN_EXPIRE_MINUTES` - JWT token expiration time in minutes
 
@@ -283,6 +285,10 @@ npm run dev
 
 ### Production Variables
 - `DEVELOPMENT_MODE` - Set to `false` for production environments (default: True)
+  - When set to `true`, enables:
+    - Mock MongoDB client when MongoDB is unavailable
+    - Gemini API for Twitter data generation with fallbacks
+    - Default timing estimates when MongoDB is unavailable
 - `FRONTEND_URL` - URL of the frontend for CORS configuration (default: varies by environment)
 - `LOG_LEVEL` - Logging level (default: INFO)
 - `GUNICORN_WORKERS` - Number of Gunicorn workers for production (default: 4)
@@ -292,7 +298,15 @@ npm run dev
 
 Once the backend is running, visit `http://localhost:8000/docs` for the interactive API documentation.
 
-## Gemini API Integration
+## Documentation
+
+### Feature Documentation
+
+- [Twitter Data Generation and Scraping](docs/features/twitter_scraping.md)
+- [MongoDB Integration](docs/mongodb_integration.md)
+- [Troubleshooting Common Issues](docs/troubleshooting/common_issues.md)
+
+### Gemini API Integration
 
 The application includes advanced integration with Google's Gemini API for enhanced text analysis capabilities. For detailed documentation, see [Gemini API Integration Documentation](docs/gemini_api_integration.md).
 

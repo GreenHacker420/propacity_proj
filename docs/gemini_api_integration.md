@@ -26,6 +26,7 @@ The Gemini API integration provides the following features:
 - **Gemini-Powered Insight Extraction**: Extract key insights, pain points, feature requests, and positive aspects from reviews using Gemini API
 - **Summary Generation**: Generate concise summaries from multiple reviews using Gemini API
 - **Weekly Summaries**: Generate weekly summaries for product prioritization using Gemini API
+- **Twitter Data Generation**: Generate realistic Twitter data based on user queries when scraping is unavailable
 - **Adaptive Throttling**: Automatically adjust request rates to avoid rate limits
 - **Multi-Level Caching**: Cache results for faster response times
 - **Circuit Breaker Pattern**: Gracefully degrade to local processing when API is unavailable
@@ -386,6 +387,79 @@ if "429" in str(e) or "quota" in str(e).lower() or "rate" in str(e).lower():
     # Check if we should open the circuit breaker
     if self.consecutive_failures >= self.failure_threshold:
         self._open_circuit()
+```
+
+### Twitter Data Generation
+
+The Gemini API is used to generate realistic Twitter data when scraping from Twitter/X is unavailable or fails. This approach ensures that users always get useful data for their queries, even when external services are unavailable or rate-limited.
+
+The Twitter data generation feature:
+
+- Generates diverse tweets with realistic sentiment distribution
+- Creates tweets that are relevant to the query topic
+- Includes appropriate hashtags, mentions, and metrics
+- Falls back to direct web scraping or local mock data if needed
+
+The implementation uses a three-tier approach:
+
+1. **Primary Method**: Generate realistic Twitter data using Gemini API
+2. **Secondary Method**: Direct web scraping from Twitter/X or Nitter instances
+3. **Fallback Method**: Local mock data generation
+
+For detailed information about Twitter data generation, see the [Twitter Scraping Documentation](features/twitter_scraping.md).
+
+```python
+def _generate_gemini_twitter_data(self, query: str, limit: int) -> List[Dict]:
+    """
+    Generate realistic mock Twitter data using Gemini API.
+
+    Args:
+        query: Search query for Twitter
+        limit: Maximum number of tweets to return
+
+    Returns:
+        List of dictionaries containing mock tweet data
+    """
+    # Create a prompt for Gemini to generate realistic tweets
+    prompt = f"""
+    Generate {limit} realistic tweets about "{query}".
+
+    The tweets should:
+    1. Be diverse in sentiment (positive, negative, neutral)
+    2. Include a mix of opinions, questions, and statements
+    3. Have realistic usernames
+    4. Include some hashtags and mentions where appropriate
+    5. Vary in length and style
+    6. Be relevant to the query topic
+    7. Include some feature requests or complaints where appropriate
+    8. Include some praise or positive feedback where appropriate
+
+    Format the response as a JSON array of tweet objects with the following structure:
+    ```json
+    [
+      {{
+        "text": "The tweet text including any hashtags or mentions",
+        "username": "realistic_username",
+        "timestamp": "2025-05-DD HH:MM:SS",
+        "metrics": {{
+          "retweet_count": number,
+          "reply_count": number,
+          "like_count": number,
+          "quote_count": number
+        }}
+      }},
+      ...
+    ]
+    ```
+
+    IMPORTANT: Return ONLY the JSON array without any additional text, explanation, or markdown formatting.
+    """
+
+    # Get response from Gemini
+    response = self.gemini_service.model.generate_content(prompt)
+
+    # Process the response and return the generated tweets
+    # ...
 ```
 
 ### Local Sentiment Analysis
