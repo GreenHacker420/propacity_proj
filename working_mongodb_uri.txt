@@ -1,1 +1,0 @@
-mongodb+srv://hhirawat2006:gHUaAP6LduXoThsC@cluster0.5zr5sli.mongodb.net/product_reviews?retryWrites=true&w=majority
