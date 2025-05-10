@@ -345,7 +345,7 @@ const api = {
   // Delete analysis by ID
   deleteAnalysis: async (analysisId) => {
     try {
-      await axios.delete(`/history/${analysisId}`);
+      await axios.delete(`/api/history/${analysisId}`);
       return true;
     } catch (error) {
       console.error(`Error deleting analysis with ID ${analysisId}:`, error);
