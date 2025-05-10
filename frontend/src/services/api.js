@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { getToken } from './authService';
+import { fromJSON } from 'postcss';
 
 // In production, the backend is mounted at /api and the API routes have an /api prefix
 // So we need to use /api/api/ for all endpoints
-const baseURL = '';
+const baseURL = import.meta.env.VITE_API_URL || '';
 
 // Configure axios
 axios.defaults.baseURL = baseURL;
@@ -344,7 +345,7 @@ const api = {
   // Delete analysis by ID
   deleteAnalysis: async (analysisId) => {
     try {
-      await axios.delete(`/api/history/${analysisId}`);
+      await axios.delete(`/history/${analysisId}`);
       return true;
     } catch (error) {
       console.error(`Error deleting analysis with ID ${analysisId}:`, error);
