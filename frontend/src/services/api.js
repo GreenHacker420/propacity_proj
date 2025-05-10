@@ -20,24 +20,38 @@ let apiStatus = {
 // Authentication is disabled for now
 // No request interceptor for authentication
 
+// List of endpoints that don't require authentication
+const noAuthEndpoints = [
+  '/api/gemini/status',
+  '/gemini/status',
+  '/api/history',
+  '/api/weekly/priorities'
+];
+
 // Add request interceptor for authentication
 axios.interceptors.request.use(
   config => {
-    const token = getToken();
-    console.log('Auth token for request:', token); // Debug log
-    console.log('Request URL:', config.url); // Debug log
+    // Check if this endpoint requires authentication
+    const isAuthRequired = !noAuthEndpoints.some(endpoint => config.url.includes(endpoint));
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log('Request headers:', config.headers); // Debug log
-    } else {
-      console.warn('No auth token found for request'); // Debug log
+    // Only log auth token for endpoints that require authentication
+    if (isAuthRequired) {
+      const token = getToken();
+      console.log('Auth token for request:', token); // Debug log
+      console.log('Request URL:', config.url); // Debug log
 
-      // For scrape endpoint, add a hardcoded token if no token is found
-      if (config.url.includes('/api/scrape')) {
-        const hardcodedToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXIiLCJpZCI6IjY4MWMyZWNmZWJjOGQxYjI2MGY3ODIzMyIsImV4cCI6MTc0NjY5MDE3MX0.lPpWE0oRzHjK4RkaNgerzIQS6p5myiV_q7uDo9TVItk';
-        config.headers.Authorization = `Bearer ${hardcodedToken}`;
-        console.log('Added hardcoded token for scrape endpoint');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        console.log('Request headers:', config.headers); // Debug log
+      } else {
+        console.warn('No auth token found for request'); // Debug log
+
+        // For scrape endpoint, add a hardcoded token if no token is found
+        if (config.url.includes('/api/scrape')) {
+          const hardcodedToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0X3VzZXIiLCJpZCI6IjY4MWMyZWNmZWJjOGQxYjI2MGY3ODIzMyIsImV4cCI6MTc0NjY5MDE3MX0.lPpWE0oRzHjK4RkaNgerzIQS6p5myiV_q7uDo9TVItk';
+          config.headers.Authorization = `Bearer ${hardcodedToken}`;
+          console.log('Added hardcoded token for scrape endpoint');
+        }
       }
     }
     return config;
@@ -122,7 +136,13 @@ const api = {
   // Get Gemini service status
   getGeminiStatus: async () => {
     try {
-      const response = await axios.get('/api/gemini/status');
+      // Use a specific configuration to indicate this doesn't need authentication
+      const response = await axios.get('/api/gemini/status', {
+        headers: {
+          // Explicitly remove any Authorization header
+          'Authorization': ''
+        }
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching Gemini status:', error);
@@ -259,6 +279,10 @@ const api = {
         params: {
           source_type: sourceType,
           time_range: timeRange
+        },
+        headers: {
+          // Explicitly remove any Authorization header
+          'Authorization': ''
         }
       });
       return response.data;
@@ -292,7 +316,13 @@ const api = {
   // Get analysis history
   getAnalysisHistory: async () => {
     try {
-      const response = await axios.get('/api/history');
+      // Use a specific configuration to indicate this doesn't need authentication
+      const response = await axios.get('/api/history', {
+        headers: {
+          // Explicitly remove any Authorization header
+          'Authorization': ''
+        }
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching analysis history:', error);
@@ -338,6 +368,10 @@ const api = {
         params: {
           source_type: sourceType,
           time_range: timeRange
+        },
+        headers: {
+          // Explicitly remove any Authorization header
+          'Authorization': ''
         }
       });
       return response.data;

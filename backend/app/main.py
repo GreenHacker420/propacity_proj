@@ -13,6 +13,60 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Set specific loggers to WARNING level to reduce noise
+websocket_loggers = [
+    "app.api.websocket_routes",
+    "app.api.public_ws"
+]
+for logger_name in websocket_loggers:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+# Add a comprehensive filter to reduce log verbosity
+class LogFilter(logging.Filter):
+    def filter(self, record):
+        # Filter out ping/pong messages
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            msg = record.msg.lower()
+
+            # Filter out ping/pong messages
+            if 'ping' in msg or 'pong' in msg:
+                return False
+
+            # Filter out repetitive status checks
+            if 'gemini/status' in msg:
+                return False
+
+            # Filter out batch progress updates except for first, last, or every 5th
+            if 'batch progress' in msg and 'batch progress: ' in msg:
+                try:
+                    parts = msg.split('batch progress: ')[1].split('/')
+                    current = int(parts[0])
+                    total = int(parts[1].split(' ')[0])
+                    if current != 1 and current != total and current % 5 != 0:
+                        return False
+                except:
+                    pass
+
+            # Filter out repetitive WebSocket messages
+            if 'websocket' in msg and ('connection established' not in msg and
+                                      'disconnected' not in msg and
+                                      'error' not in msg):
+                return False
+
+            # Filter out repetitive API calls
+            if 'received response from the target:' in msg:
+                return False
+
+            # Filter out repetitive sending request messages
+            if 'sending request to the target:' in msg:
+                return False
+
+        return True
+
+# Apply the filter to all loggers
+for handler in logging.getLogger().handlers:
+    handler.addFilter(LogFilter())
+
 # Import core modules
 from app.api.routes import router as api_router
 from app.api.timing_routes import router as timing_router

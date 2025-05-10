@@ -5,12 +5,48 @@ import environment from '../config/environment';
 let socket = null;
 let connectionStatus = false;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 3;
+let pingInterval = null;
+const MAX_RECONNECT_ATTEMPTS = 5; // Increased from 3 to 5
+const RECONNECT_DELAY = 2000; // 2 seconds
 const messageHandlers = [];
+
+// Dispatch connection status change event
+const dispatchConnectionStatusChange = (status) => {
+  const event = new CustomEvent('websocketStatusChange', { detail: { connected: status } });
+  window.dispatchEvent(event);
+  console.log(`WebSocket connection status changed to: ${status ? 'connected' : 'disconnected'}`);
+};
 
 // Initialize WebSocket connection
 export const initWebSocket = () => {
+  // If already connected, don't create a new connection
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log('WebSocket already connected, reusing existing connection');
+    return socket;
+  }
+
+  // If connecting, don't create a new connection
+  if (socket && socket.readyState === WebSocket.CONNECTING) {
+    console.log('WebSocket already connecting, waiting for connection');
+    return socket;
+  }
+
   try {
+    // Clean up any existing socket
+    if (socket) {
+      try {
+        socket.close();
+      } catch (e) {
+        console.error('Error closing existing socket:', e);
+      }
+    }
+
+    // Clear any existing ping interval
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+
     // Get WebSocket URL from environment
     const wsUrl = environment.wsUrl;
     console.log(`Connecting to WebSocket at: ${wsUrl}`);
@@ -23,17 +59,28 @@ export const initWebSocket = () => {
       console.log('WebSocket connection established');
       connectionStatus = true;
       reconnectAttempts = 0;
+      dispatchConnectionStatusChange(true);
 
       // Send a ping to keep the connection alive
-      setInterval(() => {
-        if (connectionStatus) {
+      pingInterval = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
           try {
             socket.send(JSON.stringify({ type: 'ping' }));
           } catch (error) {
             console.error('Error sending ping:', error);
+            // If ping fails, try to reconnect
+            closeWebSocket();
+            initWebSocket();
           }
         }
       }, 30000); // Send ping every 30 seconds
+
+      // Send an initial message to confirm connection
+      try {
+        socket.send(JSON.stringify({ type: 'client_connected' }));
+      } catch (error) {
+        console.error('Error sending initial message:', error);
+      }
     };
 
     socket.onmessage = (event) => {
@@ -48,30 +95,44 @@ export const initWebSocket = () => {
           window.dispatchEvent(progressEvent);
         } else if (data.type === 'connection_established') {
           console.log('WebSocket connection confirmed by server');
+        } else if (data.type === 'pong') {
+          console.log('Received pong from server');
         }
 
         // Call all registered message handlers
-        messageHandlers.forEach(handler => {
-          try {
-            handler(data);
-          } catch (error) {
-            console.error('Error in message handler:', error);
-          }
-        });
+        if (messageHandlers.length > 0) {
+          console.log(`Calling ${messageHandlers.length} message handlers`);
+          messageHandlers.forEach(handler => {
+            try {
+              handler(data);
+            } catch (error) {
+              console.error('Error in message handler:', error);
+            }
+          });
+        } else {
+          console.log('No message handlers registered');
+        }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
       }
     };
 
     socket.onclose = (event) => {
-      console.log('WebSocket connection closed');
+      console.log(`WebSocket connection closed with code ${event.code}`);
       connectionStatus = false;
+      dispatchConnectionStatusChange(false);
+
+      // Clear ping interval
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
 
       // Attempt to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
         console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-        setTimeout(initWebSocket, 3000); // Try to reconnect after 3 seconds
+        setTimeout(initWebSocket, RECONNECT_DELAY); // Try to reconnect after delay
       } else {
         console.log('Maximum reconnection attempts reached. WebSocket will remain disconnected.');
       }
@@ -79,23 +140,21 @@ export const initWebSocket = () => {
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
+      // Don't set connectionStatus to false here, let onclose handle it
     };
 
     return socket;
   } catch (error) {
     console.error('Error initializing WebSocket:', error);
+    connectionStatus = false;
+    dispatchConnectionStatusChange(false);
     return null;
   }
 };
 
 // Initialize WebSocket when the service is loaded
-let initializedSocket = null;
-try {
-  initializedSocket = initWebSocket();
-  console.log('WebSocket initialized:', initializedSocket ? 'success' : 'failed');
-} catch (error) {
-  console.error('Failed to initialize WebSocket:', error);
-}
+// We'll initialize on demand instead of immediately
+console.log('WebSocket service loaded, will connect when needed');
 
 // Export functions for sending messages
 export const sendWebSocketMessage = (message) => {

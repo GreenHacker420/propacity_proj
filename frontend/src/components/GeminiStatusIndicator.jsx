@@ -1,4 +1,3 @@
-
 import { motion } from 'framer-motion';
 import { BoltIcon, ClockIcon, ExclamationTriangleIcon, ServerIcon, ShieldCheckIcon } from '@heroicons/react/24/solid';
 import useGeminiStatus from '../hooks/useGeminiStatus';

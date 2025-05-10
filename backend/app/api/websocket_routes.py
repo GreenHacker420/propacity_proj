@@ -10,6 +10,11 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set specific logger level for this module to filter out ping/pong messages
+# The root logger will still be at INFO level, but this specific logger will be at WARNING level
+# This means DEBUG and INFO messages from this module won't be logged unless explicitly changed
+logger.setLevel(logging.WARNING)
+
 router = APIRouter()
 
 # Store active connections
@@ -27,7 +32,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Always use development mode with a mock user
     user_id = "dev_user_123"
-    logger.info(f"WebSocket connection established for user {user_id}")
+    # Use WARNING level to ensure this is always logged
+    logger.warning(f"WebSocket connection established for user {user_id}")
 
     # Store the connection
     active_connections[user_id] = websocket
@@ -46,25 +52,33 @@ async def websocket_endpoint(websocket: WebSocket):
             "user_id": user_id
         }
         await websocket.send_text(json.dumps(welcome_message))
-        logger.info(f"Sent welcome message to user {user_id}")
+        # Use WARNING level to ensure this is always logged
+        logger.warning(f"Sent welcome message to user {user_id}")
 
         # Listen for messages
         while True:
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
-                logger.info(f"Received message from user {user_id}: {message}")
+
+                # Use debug level for ping messages, info for other messages
+                if message.get("type") == "ping":
+                    logger.debug(f"Received ping from user {user_id}")
+                else:
+                    logger.info(f"Received message from user {user_id}: {message}")
 
                 # Handle message types
                 if message.get("type") == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))
-                    logger.info(f"Sent pong response to user {user_id}")
+                    # Use debug level for ping/pong messages to avoid cluttering logs
+                    logger.debug(f"Sent pong response to user {user_id}")
 
             except json.JSONDecodeError:
                 logger.error(f"Invalid JSON received: {data}")
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for user {user_id}")
+        # Use WARNING level to ensure this is always logged
+        logger.warning(f"WebSocket disconnected for user {user_id}")
         if user_id in active_connections:
             del active_connections[user_id]
     except Exception as e:
@@ -89,7 +103,17 @@ async def send_batch_status(user_id: str, status: Dict[str, Any]):
             # Convert to JSON string for better compatibility
             json_data = json.dumps(status)
             await active_connections[user_id].send_text(json_data)
-            logger.info(f"Sent batch status to user {user_id}")
+
+            # Only log detailed info for non-ping messages or significant updates
+            if status.get("type") != "ping" and (
+                status.get("type") != "batch_progress" or
+                status.get("current_batch") == 1 or
+                status.get("current_batch") == status.get("total_batches") or
+                status.get("current_batch", 0) % 5 == 0
+            ):
+                logger.info(f"Sent batch status to user {user_id}")
+            else:
+                logger.debug(f"Sent batch status to user {user_id}")
         except Exception as e:
             logger.error(f"Error sending batch status to user {user_id}: {str(e)}")
             # Remove connection if it's broken
@@ -124,8 +148,11 @@ def batch_progress_callback(user_id: str, current_batch: int, total_batches: int
         "progress_percentage": min(100, (items_processed / total_items) * 100) if total_items > 0 else 0
     }
 
-    # Log the status for debugging
-    logger.info(f"Sending batch progress update: {status}")
+    # Log the status for debugging - only log detailed info for significant progress updates
+    if current_batch == 1 or current_batch == total_batches or current_batch % 5 == 0:
+        logger.info(f"Sending batch progress update: {status}")
+    else:
+        logger.debug(f"Sending batch progress update: {status}")
 
     # Send status asynchronously
     asyncio.create_task(send_batch_status(user_id, status))
@@ -141,11 +168,11 @@ async def websocket_endpoint_public(websocket: WebSocket):
     """
     # Accept the connection immediately
     await websocket.accept()
-    
+
     # Use a fixed user ID
     user_id = "public_user"
     logger.info(f"Public WebSocket connection established for user {user_id}")
-    
+
     try:
         # Send a welcome message
         welcome_message = {
@@ -154,27 +181,27 @@ async def websocket_endpoint_public(websocket: WebSocket):
             "user_id": user_id
         }
         await websocket.send_text(json.dumps(welcome_message))
-        
+
         # Keep the connection open
         while True:
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
                 logger.info(f"Received message from public user: {message}")
-                
+
                 # Echo back the message
                 await websocket.send_text(json.dumps({
                     "type": "echo",
                     "original": message
                 }))
-                
+
             except json.JSONDecodeError:
                 logger.error(f"Invalid JSON received: {data}")
                 await websocket.send_text(json.dumps({
                     "type": "error",
                     "message": "Invalid JSON format"
                 }))
-                
+
     except WebSocketDisconnect:
         logger.info(f"Public WebSocket disconnected")
     except Exception as e:

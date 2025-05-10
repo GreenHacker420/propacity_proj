@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /**
  * Component to display batch processing progress
@@ -10,10 +10,18 @@ import React, { useState, useEffect } from 'react';
  */
 const BatchProgress = ({ status, isVisible, onComplete }) => {
   const [timeRemaining, setTimeRemaining] = useState('');
+  const [progressPercentage, setProgressPercentage] = useState(0);
+  const lastStatusRef = useRef(null);
 
+  // Update time remaining and progress percentage when status changes
   useEffect(() => {
+    if (!status) return;
+
+    // Store the latest valid status
+    lastStatusRef.current = status;
+
     // Format time remaining
-    if (status && status.estimated_time_remaining) {
+    if (status.estimated_time_remaining) {
       const seconds = Math.round(status.estimated_time_remaining);
       if (seconds < 60) {
         setTimeRemaining(`${seconds} seconds`);
@@ -24,8 +32,21 @@ const BatchProgress = ({ status, isVisible, onComplete }) => {
       }
     }
 
+    // Calculate progress percentage
+    const percentage = status.progress_percentage !== undefined ? status.progress_percentage :
+      (status.items_processed !== undefined && status.total_items !== undefined && status.total_items > 0)
+        ? Math.min(100, (status.items_processed / status.total_items) * 100)
+        : (status.current_batch !== undefined && status.total_batches !== undefined && status.total_batches > 0)
+          ? Math.min(100, (status.current_batch / status.total_batches) * 100)
+          : 0;
+
+    setProgressPercentage(percentage);
+
+    // Log progress update
+    console.log(`Batch progress updated: ${percentage.toFixed(1)}%`);
+
     // Call onComplete when processing is done
-    if (status && status.progress_percentage === 100 && onComplete) {
+    if (percentage >= 100 && onComplete) {
       // Add a small delay to show 100% before completing
       setTimeout(() => {
         onComplete();
@@ -33,17 +54,13 @@ const BatchProgress = ({ status, isVisible, onComplete }) => {
     }
   }, [status, onComplete]);
 
-  if (!isVisible || !status) {
+  // If not visible or no status (and no previous status), don't render
+  if (!isVisible || (!status && !lastStatusRef.current)) {
     return null;
   }
 
-  // Calculate progress percentage if not provided
-  const progressPercentage = status.progress_percentage ||
-    (status.items_processed && status.total_items
-      ? Math.min(100, (status.items_processed / status.total_items) * 100)
-      : (status.current_batch && status.total_batches
-        ? Math.min(100, (status.current_batch / status.total_batches) * 100)
-        : 0));
+  // Use the current status or the last valid status if current is null
+  const displayStatus = status || lastStatusRef.current;
 
   return (
     <div
@@ -65,24 +82,24 @@ const BatchProgress = ({ status, isVisible, onComplete }) => {
           className={`h-full rounded-md ${progressPercentage < 100 ? "bg-blue-500" : "bg-green-500"} ${
             progressPercentage < 100 ? "animate-pulse" : ""
           }`}
-          style={{ width: `${progressPercentage}%` }}
+          style={{ width: `${Math.max(5, progressPercentage)}%` }}
         ></div>
       </div>
 
       <div className="flex justify-between text-sm text-gray-600">
         <p>
-          {status.items_processed || 0} / {status.total_items || 0} items
-          {status.avg_speed ? ` (${status.avg_speed.toFixed(1)} items/sec)` : ''}
+          {displayStatus.items_processed || 0} / {displayStatus.total_items || 0} items
+          {displayStatus.avg_speed ? ` (${displayStatus.avg_speed.toFixed(1)} items/sec)` : ''}
         </p>
         {timeRemaining && progressPercentage < 100 && (
           <p>Est. time remaining: {timeRemaining}</p>
         )}
       </div>
 
-      {status.current_batch && status.total_batches && (
+      {displayStatus.current_batch && displayStatus.total_batches && (
         <p className="text-xs text-gray-500 mt-1">
-          Batch {status.current_batch} of {status.total_batches}
-          {status.batch_time ? ` (${status.batch_time.toFixed(1)}s per batch)` : ''}
+          Batch {displayStatus.current_batch} of {displayStatus.total_batches}
+          {displayStatus.batch_time ? ` (${displayStatus.batch_time.toFixed(1)}s per batch)` : ''}
         </p>
       )}
     </div>

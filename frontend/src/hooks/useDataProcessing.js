@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../services/api';
+import { initWebSocket } from '../services/websocketService';
 
 /**
  * Custom hook for handling data processing operations
@@ -29,6 +30,10 @@ const useDataProcessing = (processingHook) => {
       setLoading(true);
       setError(null);
       setProcessingStep(0);
+
+      // Initialize WebSocket connection for real-time progress updates
+      console.log('Initializing WebSocket connection for file upload');
+      initWebSocket();
 
       // Start timing the upload operation
       const uploadStartTime = Date.now();
@@ -121,6 +126,10 @@ const useDataProcessing = (processingHook) => {
       setLoading(true);
       setError(null);
       setProcessingStep(0);
+
+      // Initialize WebSocket connection for real-time progress updates
+      console.log('Initializing WebSocket connection for data scraping');
+      initWebSocket();
 
       // Start timing the scrape operation
       const scrapeStartTime = Date.now();

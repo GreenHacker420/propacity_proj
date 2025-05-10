@@ -2,15 +2,11 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
-import { initWebSocket } from './services/websocketService'
+import environment from './config/environment'
 
-// No need for process.env polyfill anymore
-
-// Initialize WebSocket connection with a small delay to ensure environment is loaded
-setTimeout(() => {
-  console.log('Initializing WebSocket connection from main.jsx');
-  initWebSocket();
-}, 500);
+// We'll initialize the WebSocket connection on demand in the components
+// rather than at application startup to avoid unnecessary connections
+console.log('Application starting with environment:', environment.nodeEnv);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
