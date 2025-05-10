@@ -1,12 +1,19 @@
 // Environment configuration
 const environment = {
-  // API URL
-  apiUrl: 'http://localhost:8000',
+ 
+apiUrl: import.meta.env.VITE_API_URL || '/api',
 
-  // WebSocket URL - directly use the backend URL
-  wsUrl: 'ws://localhost:8000',
+wsUrl: (() => {
+  // In development, use the environment variable
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+  
+  // In production, construct the URL based on the current location
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws`;
+})(),
 
-  // Environment (development, production, etc.)
+// Environment (development, production, etc.)
   nodeEnv: import.meta.env.MODE || 'development',
 };
 

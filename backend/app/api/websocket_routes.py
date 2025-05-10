@@ -4,7 +4,7 @@ import logging
 import json
 import asyncio
 import os
-from ..auth.mongo_auth import get_current_user_ws
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -133,3 +133,49 @@ def batch_progress_callback(user_id: str, current_batch: int, total_batches: int
     # Also send to all connections (for development)
     for connection_id in active_connections:
         asyncio.create_task(send_batch_status(connection_id, status))
+
+@router.websocket("/ws-public")
+async def websocket_endpoint_public(websocket: WebSocket):
+    """
+    Public WebSocket endpoint with no authentication.
+    """
+    # Accept the connection immediately
+    await websocket.accept()
+    
+    # Use a fixed user ID
+    user_id = "public_user"
+    logger.info(f"Public WebSocket connection established for user {user_id}")
+    
+    try:
+        # Send a welcome message
+        welcome_message = {
+            "type": "connection_established",
+            "message": "Public WebSocket connection established successfully",
+            "user_id": user_id
+        }
+        await websocket.send_text(json.dumps(welcome_message))
+        
+        # Keep the connection open
+        while True:
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                logger.info(f"Received message from public user: {message}")
+                
+                # Echo back the message
+                await websocket.send_text(json.dumps({
+                    "type": "echo",
+                    "original": message
+                }))
+                
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON received: {data}")
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON format"
+                }))
+                
+    except WebSocketDisconnect:
+        logger.info(f"Public WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Public WebSocket error: {str(e)}")

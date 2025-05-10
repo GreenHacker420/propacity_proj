@@ -186,9 +186,23 @@ class Scraper:
             continuation_token = None
             batch_size = 100  # Max batch size for reviews method
 
+
+            # Add counters for empty batches and maximum scraping time
+            empty_batch_count = 0
+            MAX_EMPTY_BATCHES = 5  # Stop after 5 consecutive empty batches
+            max_scrape_time = 60  # Maximum 60 seconds for scraping
+            start_scrape_time = time.time()
+
+
+
             # Keep fetching batches until we reach the limit or run out of reviews
             while len(result) < limit:
                 try:
+                    # Check if we've exceeded the maximum scraping time
+                    if time.time() - start_scrape_time > max_scrape_time:
+                        logger.warning(f"Scraping timed out after {max_scrape_time} seconds")
+                        break
+
                     logger.info(f"Fetching batch of up to {min(batch_size, limit - len(result))} reviews (total so far: {len(result)})")
                     batch, continuation_token = reviews(
                         app_id=app_id,
@@ -200,6 +214,18 @@ class Scraper:
                     )
 
                     logger.info(f"Fetched {len(batch)} reviews in this batch")
+
+                    # Check for empty batch
+                    if len(batch) == 0:
+                        empty_batch_count += 1
+                        logger.warning(f"Empty batch #{empty_batch_count}")
+                        if empty_batch_count >= MAX_EMPTY_BATCHES:
+                            logger.warning(f"Stopping after {MAX_EMPTY_BATCHES} consecutive empty batches")
+                            break
+                    else:
+                        # Reset counter if we got some reviews
+                        empty_batch_count = 0
+
                     result.extend(batch)
 
                     # If no more reviews or we've reached the limit, break
@@ -218,6 +244,9 @@ class Scraper:
                     else:
                         # If we have no results, re-raise to fall back to mock data
                         raise
+
+
+
 
             processing_time = time.time() - start_time
             logger.info(f"Play Store scraping completed in {processing_time:.2f} seconds, fetched {len(result)} reviews")

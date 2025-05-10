@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { initWebSocket, addMessageHandler, isConnected } from '../services/websocketService';
 import BatchProgress from './BatchProgress';
 
 /**
- * Component that connects to WebSocket and displays batch progress
+ * Component that displays batch progress (modified to work without WebSockets)
  *
  * @param {Object} props Component props
  * @param {boolean} props.isProcessing Whether processing is active
@@ -13,78 +12,73 @@ const WebSocketBatchProgress = ({ isProcessing, onComplete }) => {
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
 
-  // Initialize WebSocket connection when component mounts
+  // Mock WebSocket functionality
   useEffect(() => {
     if (isProcessing) {
-      // Initialize WebSocket connection
-      initWebSocket();
-
-      // Check connection status
-      const checkConnection = () => {
-        const connectionStatus = isConnected();
-        setConnected(connectionStatus);
-        return connectionStatus;
-      };
-
-      // Try to connect if not already connected
-      if (!checkConnection()) {
-        const interval = setInterval(() => {
-          if (checkConnection()) {
-            clearInterval(interval);
-          }
-        }, 1000);
-
-        // Clean up interval
-        return () => clearInterval(interval);
-      }
-    }
-  }, [isProcessing]);
-
-  // Add message handler for batch progress updates
-  useEffect(() => {
-    if (isProcessing) {
-      // Add handler for batch progress messages
-      const removeHandler = addMessageHandler((data) => {
-        console.log('Received WebSocket message:', data);
-
-        // Handle batch progress updates
-        if (data.type === 'batch_progress') {
-          console.log('Received batch progress update:', data);
-          setStatus(data);
-        }
-        // Handle any message that contains batch progress information
-        else if (data.current_batch && data.total_batches) {
-          console.log('Received batch data in non-standard format:', data);
-          setStatus({
-            ...data,
-            type: 'batch_progress',
-            progress_percentage: data.progress_percentage ||
-              (data.items_processed && data.total_items
-                ? (data.items_processed / data.total_items) * 100
-                : (data.current_batch / data.total_batches) * 100)
-          });
-        }
+      console.log('WebSocketBatchProgress: Processing started');
+      
+      // Simulate connection established
+      setConnected(true);
+      
+      // Simulate initial status
+      setStatus({
+        type: 'batch_progress',
+        current_batch: 1,
+        total_batches: 5,
+        items_processed: 0,
+        total_items: 100,
+        progress_percentage: 0,
+        estimated_time_remaining: 30,
+        avg_speed: 3.3
       });
-
-      // Clean up handler when component unmounts
-      return () => removeHandler();
+      
+      // Simulate progress updates
+      const interval = setInterval(() => {
+        setStatus(prev => {
+          if (!prev) return null;
+          
+          // Calculate new values
+          const newItemsProcessed = Math.min(prev.total_items, prev.items_processed + 5);
+          const newPercentage = Math.min(100, (newItemsProcessed / prev.total_items) * 100);
+          const newTimeRemaining = prev.estimated_time_remaining > 0 ? 
+            Math.max(0, prev.estimated_time_remaining - 1) : 0;
+          
+          // Create updated status
+          const newStatus = {
+            ...prev,
+            items_processed: newItemsProcessed,
+            progress_percentage: newPercentage,
+            estimated_time_remaining: newTimeRemaining
+          };
+          
+          // If we've reached 100%, trigger completion after a delay
+          if (newPercentage >= 100 && onComplete) {
+            setTimeout(() => {
+              onComplete();
+              setStatus(null);
+            }, 1000);
+          }
+          
+          return newStatus;
+        });
+      }, 1000);
+      
+      // Cleanup function
+      return () => {
+        clearInterval(interval);
+        console.log('WebSocketBatchProgress: Component unmounted');
+      };
     } else {
       // Reset status when not processing
       setStatus(null);
+      setConnected(false);
     }
-  }, [isProcessing]);
-
-  // Handle completion
-  const handleComplete = () => {
-    if (onComplete) {
-      onComplete();
-    }
-  };
+  }, [isProcessing, onComplete]);
 
   // If processing but no status yet, show connecting message
   if (isProcessing && !status) {
     // Log to help with debugging
-    console.log('Batch processing started, waiting for WebSocket updates...');
+    console.log('Batch processing started, waiting for updates...');
 
     return (
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -92,7 +86,7 @@ const WebSocketBatchProgress = ({ isProcessing, onComplete }) => {
           <p className="text-sm font-medium text-blue-700">Batch Processing Started</p>
         </div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-blue-600">Connecting to real-time progress updates...</p>
+          <p className="text-xs text-blue-600">Initializing progress tracking...</p>
         </div>
         <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
           <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: '30%' }}></div>
@@ -105,7 +99,7 @@ const WebSocketBatchProgress = ({ isProcessing, onComplete }) => {
     <BatchProgress
       status={status}
       isVisible={isProcessing && status !== null}
-      onComplete={handleComplete}
+      onComplete={onComplete}
     />
   );
 };

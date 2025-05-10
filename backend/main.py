@@ -158,7 +158,13 @@ origins = [
     "http://127.0.0.1:3002",
     "http://127.0.0.1:3003",
     "http://127.0.0.1:3004",
-    "http://127.0.0.1:5173"
+    "http://127.0.0.1:5173",
+     "http://13.62.6.5",
+    "https://13.62.6.5",
+    "http://greenhacker.studio",
+    "https://greenhacker.studio",
+    "http://www.greenhacker.studio",
+    "https://www.greenhacker.studio"
 ]
 
 # Add production URLs if available
@@ -187,6 +193,26 @@ async def review_system_exception_handler(_: Request, exc: ReviewSystemException
         status_code=exc.status_code,
         content={"detail": exc.detail},
     )
+
+
+# Import the public WebSocket router
+try:
+    from app.api.public_ws import router as public_ws_router
+    print("Successfully imported public WebSocket router")
+except ImportError as e:
+    print(f"Error importing public WebSocket router: {e}")
+    # Try alternative import path
+    try:
+        from backend.app.api.public_ws import router as public_ws_router
+        print("Successfully imported public WebSocket router (alternative path)")
+    except ImportError as e:
+        print(f"Error importing public WebSocket router (alternative path): {e}")
+        public_ws_router = None
+
+# Include the public WebSocket router
+if public_ws_router:
+    app.include_router(public_ws_router)
+    print("Included public WebSocket router")
 
 # Include API routes
 app.include_router(api_router, prefix="/api")

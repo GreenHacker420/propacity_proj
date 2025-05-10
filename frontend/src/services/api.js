@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getToken } from './authService';
 
 // Always use the direct backend URL to avoid proxy issues
-const baseURL = 'http://localhost:8000';
+const baseURL = import.meta.env.VITE_API_URL || '/api';
 
 // Configure axios
 axios.defaults.baseURL = baseURL;
