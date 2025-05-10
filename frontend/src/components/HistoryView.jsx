@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ClockIcon, DocumentTextIcon, ChartPieIcon, TrashIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  ClockIcon,
+  DocumentTextIcon,
+  ChartPieIcon,
+  TrashIcon,
+  EyeIcon,
+  XMarkIcon,
+  ArrowPathIcon
+} from '@heroicons/react/24/outline';
 import api from '../services/api';
 import LoadingIndicator from './LoadingIndicator';
 import ConfirmationDialog from './ConfirmationDialog';
@@ -9,33 +17,55 @@ import SummaryView from './SummaryView';
 /**
  * Component for displaying analysis history
  */
-const HistoryView = ({ onSelectAnalysis, onClose }) => {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+const HistoryView = ({
+  onSelectAnalysis,
+  onClose,
+  historyData = [],
+  isLoading = false,
+  onRefresh
+}) => {
+  const [history, setHistory] = useState(historyData);
+  const [loading, setLoading] = useState(isLoading);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [showSummary, setShowSummary] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
 
-  // Fetch history data on component mount
+  // Update history when props change
   useEffect(() => {
-    const fetchHistory = async () => {
+    setHistory(historyData);
+    setLoading(isLoading);
+  }, [historyData, isLoading]);
+
+  // Handle refresh button click
+  const handleRefresh = async () => {
+    if (onRefresh) {
+      setRefreshing(true);
       try {
-        setLoading(true);
+        await onRefresh();
+      } catch (err) {
+        console.error('Error refreshing history:', err);
+        setError('Failed to refresh history. Please try again later.');
+      } finally {
+        setRefreshing(false);
+      }
+    } else {
+      // Fallback to local refresh if onRefresh not provided
+      try {
+        setRefreshing(true);
         const data = await api.getAnalysisHistory();
         setHistory(data);
         setError(null);
       } catch (err) {
-        console.error('Error fetching history:', err);
-        setError('Failed to load analysis history. Please try again later.');
+        console.error('Error refreshing history:', err);
+        setError('Failed to refresh history. Please try again later.');
       } finally {
-        setLoading(false);
+        setRefreshing(false);
       }
-    };
-
-    fetchHistory();
-  }, []);
+    }
+  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -67,8 +97,13 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
       // Call API to delete the analysis
       await api.deleteAnalysis(selectedItemId);
 
-      // Update local state to remove the deleted item
-      setHistory(history.filter(item => item._id !== selectedItemId));
+      // If onRefresh is provided, use it to refresh the history data
+      if (onRefresh) {
+        await onRefresh();
+      } else {
+        // Otherwise, update local state to remove the deleted item
+        setHistory(history.filter(item => item._id !== selectedItemId));
+      }
 
       setShowDeleteConfirm(false);
       setSelectedItemId(null);
@@ -109,7 +144,7 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
 
   return (
     <motion.div
-      className="bg-white rounded-lg shadow-lg p-6 w-full"
+      className="bg-white rounded-lg shadow-lg p-6 w-full max-w-6xl max-h-[85vh] overflow-hidden flex flex-col"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
@@ -120,33 +155,51 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
           <ClockIcon className="w-6 h-6 mr-2 text-blue-600" />
           Analysis History
         </h2>
-        <button
-          className="btn btn-secondary"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="flex space-x-2">
+          <motion.button
+            className="btn btn-primary flex items-center"
+            onClick={handleRefresh}
+            disabled={refreshing || loading}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <ArrowPathIcon className={`w-5 h-5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </motion.button>
+          <button
+            className="btn btn-secondary"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-12">
+        <div className="flex-1 flex justify-center items-center py-12">
           <LoadingIndicator size={40} />
           <p className="ml-4 text-gray-600">Loading history...</p>
         </div>
+      ) : refreshing ? (
+        <div className="flex-1 flex justify-center items-center py-12">
+          <LoadingIndicator size={40} />
+          <p className="ml-4 text-gray-600">Refreshing history...</p>
+        </div>
       ) : error ? (
-        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mt-4">
+        <div className="flex-1 bg-red-50 border border-red-200 text-red-800 rounded-lg p-4 mt-4">
           <p className="font-medium">{error}</p>
         </div>
       ) : history.length === 0 ? (
-        <div className="bg-gray-50 border border-gray-200 text-gray-800 rounded-lg p-8 mt-4 text-center">
+        <div className="flex-1 bg-gray-50 border border-gray-200 text-gray-800 rounded-lg p-8 mt-4 text-center">
           <p className="font-medium text-lg">No analysis history found</p>
           <p className="text-gray-600 mt-2">Complete an analysis to see it here</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="overflow-y-auto overflow-x-auto flex-1">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0 z-10">
+                <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Source
                 </th>
@@ -239,6 +292,7 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
               </AnimatePresence>
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -263,8 +317,8 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="p-6 flex flex-col h-full">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-gray-900">
                     Summary: {selectedSummary.source_type} ({selectedSummary.source_name})
@@ -277,7 +331,7 @@ const HistoryView = ({ onSelectAnalysis, onClose }) => {
                   </button>
                 </div>
 
-                <div className="overflow-y-auto">
+                <div className="overflow-y-auto flex-1">
                   <SummaryView summary={selectedSummary.summary} />
                 </div>
               </div>

@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Import custom hooks
 import useProcessing from './hooks/useProcessing';
 import useDataProcessing from './hooks/useDataProcessing';
+
+// Import API service
+import api from './services/api';
 
 // Import components
 import Header from './components/Header';
@@ -52,6 +55,26 @@ function App() {
   // History state
   const [showHistory, setShowHistory] = useState(false);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Fetch history data on component mount
+  useEffect(() => {
+    fetchHistoryData();
+  }, []);
+
+  // Function to fetch history data
+  const fetchHistoryData = async () => {
+    try {
+      setHistoryLoading(true);
+      const data = await api.getAnalysisHistory();
+      setHistoryData(data);
+    } catch (err) {
+      console.error('Error fetching history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   // Reset all data and return to input screen
   const handleReset = () => {
@@ -204,7 +227,7 @@ function App() {
           <AnimatePresence>
             {showHistory && (
               <motion.div
-                className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+                className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -213,6 +236,9 @@ function App() {
                 <HistoryView
                   onSelectAnalysis={handleSelectAnalysis}
                   onClose={handleToggleHistory}
+                  historyData={historyData}
+                  isLoading={historyLoading}
+                  onRefresh={fetchHistoryData}
                 />
               </motion.div>
             )}

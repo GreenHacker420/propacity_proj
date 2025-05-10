@@ -324,7 +324,7 @@ const api = {
 
   async getAnalytics() {
     try {
-      const response = await axios.get('/analytics');
+      const response = await axios.get('/api/analytics');
       return response.data;
     } catch (error) {
       console.error('Error fetching analytics:', error);
@@ -349,7 +349,7 @@ const api = {
 
   async getReviews(filters = {}) {
     try {
-      const response = await axios.get('/reviews', { params: filters });
+      const response = await axios.get('/api/reviews', { params: filters });
       return response.data;
     } catch (error) {
       console.error('Error fetching reviews:', error);
@@ -359,7 +359,7 @@ const api = {
 
   async scrapeReviews(source) {
     try {
-      const response = await axios.post('/scrape', { source });
+      const response = await axios.post('/api/scrape', { source });
       return response.data;
     } catch (error) {
       console.error('Error scraping reviews:', error);
