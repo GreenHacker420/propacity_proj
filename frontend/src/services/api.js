@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { getToken } from './authService';
 
-// Always use the direct backend URL to avoid proxy issues
+// Always use the direct backend URL to avoid proxy issues in development
 // In production, we'll add the /api prefix to each endpoint
-const baseURL = '';
+const baseURL = import.meta.env.VITE_API_URL || '';
 
 // Configure axios
 axios.defaults.baseURL = baseURL;
