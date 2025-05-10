@@ -1,78 +1,24 @@
-import React, { useState, useEffect } from 'react';
+
 import { motion } from 'framer-motion';
 import { BoltIcon, ClockIcon, ExclamationTriangleIcon, ServerIcon, ShieldCheckIcon } from '@heroicons/react/24/solid';
-import api from '../services/api';
+import useGeminiStatus from '../hooks/useGeminiStatus';
 
 const GeminiStatusIndicator = ({ className = '', refreshInterval = 10000 }) => {
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [timeRemaining, setTimeRemaining] = useState({
-    rateLimit: 0,
-    circuit: 0
-  });
-
-  // Fetch Gemini status
-  const fetchStatus = async () => {
-    try {
-      const geminiStatus = await api.getGeminiStatus();
-      setStatus(geminiStatus);
-
-      // Set time remaining
-      setTimeRemaining({
-        rateLimit: geminiStatus.rate_limit_reset_in || 0,
-        circuit: geminiStatus.circuit_reset_in || 0
-      });
-    } catch (error) {
-      console.error('Error fetching Gemini status:', error);
-      // Set a default status when the endpoint is not available
-      setStatus({
-        available: false,
-        model: 'unavailable',
-        rate_limited: false,
-        circuit_open: false,
-        using_local_processing: true
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Update countdown timers
-  useEffect(() => {
-    if (!status) return;
-
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => ({
-        rateLimit: Math.max(0, prev.rateLimit - 1),
-        circuit: Math.max(0, prev.circuit - 1)
-      }));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [status]);
-
-  // Fetch status on mount and periodically
-  useEffect(() => {
-    fetchStatus();
-
-    const interval = setInterval(fetchStatus, refreshInterval);
-    return () => clearInterval(interval);
-  }, [refreshInterval]);
+  // Use the custom hook for Gemini status
+  const {
+    status,
+    loading,
+    timeRemaining,
+    formatTime,
+    isLimited
+  } = useGeminiStatus(refreshInterval);
 
   if (loading) return null;
 
   // If everything is normal, don't show anything
-  if (status && !status.rate_limited && !status.circuit_open && status.available) {
+  if (!isLimited) {
     return null;
   }
-
-  // Format time remaining
-  const formatTime = (seconds) => {
-    if (!seconds) return '0:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
 
   return (
     <motion.div

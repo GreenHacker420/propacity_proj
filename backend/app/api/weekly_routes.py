@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 import logging
-from bson.objectid import ObjectId
-from motor.motor_asyncio import AsyncIOMotorCollection
+import json
 
-from ..models.weekly_summary import WeeklySummaryCreate, WeeklySummaryResponse, PriorityInsights
+from bson.objectid import ObjectId
+# Remove motor import as we're using pymongo synchronously
+# from motor.motor_asyncio import AsyncIOMotorCollection
+
+from ..models.weekly_summary import WeeklySummaryCreate, WeeklySummaryResponse
 from ..services.weekly_summary_service import WeeklySummaryService
-from ..auth.mongo_auth import get_current_active_user
+from ..services.gemini_service import GeminiService
 from ..mongodb import get_collection, get_connection_status
 
 # Configure logging
@@ -21,8 +24,9 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-# Initialize service
+# Initialize services
 weekly_service = WeeklySummaryService()
+gemini_service = GeminiService()
 
 @router.post("/summary", response_model=WeeklySummaryResponse)
 def create_weekly_summary(
@@ -55,7 +59,7 @@ def create_weekly_summary(
 @router.get("/summary/{summary_id}", response_model=WeeklySummaryResponse)
 def get_weekly_summary(
     summary_id: str,
-    current_user: Optional[dict] = None
+    # current_user parameter removed as it's not used
 ):
     """
     Get a specific weekly summary by ID
@@ -113,10 +117,13 @@ def get_priority_insights(
             if insights and insights.high_priority_items:
                 logger.info("Found existing insights with data")
                 # Convert the Pydantic model to a dictionary
+                # Convert the Pydantic model to a dictionary using the recommended method
                 if hasattr(insights, 'model_dump'):
                     return insights.model_dump()
                 elif hasattr(insights, 'dict'):
-                    return insights.dict()
+                    # For backward compatibility with older Pydantic versions
+                    logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+                    return {k: getattr(insights, k) for k in insights.__dict__ if not k.startswith('_')}
                 else:
                     return insights
 
@@ -131,20 +138,47 @@ def get_priority_insights(
             if source_type:
                 query["source"] = source_type
 
-            # Find the most recent reviews
+            # Find the most recent reviews - check both timestamp and created_at fields
+            # First try with timestamp field
             cursor = reviews_collection.find(query).sort("timestamp", -1).limit(100)
             reviews = list(cursor)
+
+            # If no reviews found, try with created_at field
+            if not reviews:
+                query_created_at = query.copy()
+                cursor_created_at = reviews_collection.find(query_created_at).sort("created_at", -1).limit(100)
+                reviews = list(cursor_created_at)
 
             if not reviews:
                 logger.warning("No reviews found in database to generate insights")
                 # Try to get reviews from analysis history
                 history_collection = get_collection("analysis_history")
-                history_cursor = history_collection.find().sort("timestamp", -1).limit(1)
+                history_cursor = history_collection.find().sort("timestamp", -1).limit(5)  # Increased limit to find more history items
                 history_items = list(history_cursor)
 
-                if history_items and "reviews" in history_items[0]:
-                    logger.info("Using reviews from analysis history")
-                    reviews = history_items[0]["reviews"]
+                # Try to find history items with reviews
+                for history_item in history_items:
+                    if "reviews" in history_item and history_item["reviews"]:
+                        logger.info(f"Using {len(history_item['reviews'])} reviews from analysis history")
+                        reviews = history_item["reviews"]
+                        break
+                    elif "analyzedReviews" in history_item and history_item["analyzedReviews"]:
+                        logger.info(f"Using {len(history_item['analyzedReviews'])} analyzedReviews from analysis history")
+                        reviews = history_item["analyzedReviews"]
+                        break
+                    elif "summary" in history_item and history_item["summary"]:
+                        logger.info("Using summary from analysis history")
+                        # Create a mock review from the summary data
+                        summary_data = history_item["summary"]
+                        mock_review = {
+                            "text": "Generated from summary data",
+                            "source": source_type or "unknown",
+                            "sentiment_score": summary_data.get("avg_sentiment_score", 0.5),
+                            "category": "positive_feedback",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                        reviews = [mock_review]
+                        break
 
             if reviews:
                 logger.info(f"Generating insights from {len(reviews)} reviews")
@@ -153,8 +187,8 @@ def get_priority_insights(
                 end_date = datetime.now(timezone.utc)
                 start_date = end_date - timedelta(days=_get_days_from_time_range(time_range))
 
-                # Generate the summary
-                summary = weekly_service.generate_summary_from_reviews(
+                # Generate the summary (result stored but not used directly)
+                weekly_service.generate_summary_from_reviews(
                     reviews=reviews,
                     source_type=source_type or "unknown",
                     source_name=source_type or "unknown",
@@ -174,16 +208,166 @@ def get_priority_insights(
                 if hasattr(insights, 'model_dump'):
                     return insights.model_dump()
                 elif hasattr(insights, 'dict'):
-                    return insights.dict()
+                    # For backward compatibility with older Pydantic versions
+                    logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+                    return {k: getattr(insights, k) for k in insights.__dict__ if not k.startswith('_')}
                 else:
                     return insights
 
-            # If we still don't have insights, generate meaningful mock data
-            logger.warning("No data available to generate insights, creating meaningful mock data")
+            # If we still don't have insights, try to generate them with Gemini
+            logger.warning("No data available in database, attempting to generate insights with Gemini API")
+
+            try:
+                # Check if Gemini is available
+                if gemini_service.available and not gemini_service._check_circuit_breaker():
+                    # Generate insights using Gemini
+                    logger.info("Using Gemini API to generate insights")
+
+                    # Create a prompt for Gemini to generate insights
+                    prompt = f"""
+                    Generate comprehensive product insights for {source_type or "a product"}.
+
+                    Return the insights in the following JSON format:
+                    {{
+                        "high_priority_items": [
+                            {{
+                                "title": "Issue title",
+                                "description": "Detailed description",
+                                "priority_score": 0.85,  // Float between 0-1
+                                "category": "pain_point",  // One of: pain_point, feature_request
+                                "sentiment_score": 0.2,  // Float between 0-1
+                                "frequency": 12,  // Integer
+                                "examples": ["Example 1", "Example 2"]
+                            }}
+                        ],
+                        "trending_topics": [
+                            {{"name": "Topic name", "volume": 15}}  // Integer
+                        ],
+                        "sentiment_trends": {{
+                            "topic_name": 0.7  // Float between 0-1
+                        }},
+                        "action_items": [
+                            "Action item description"
+                        ],
+                        "risk_areas": [
+                            "Risk area description"
+                        ],
+                        "opportunity_areas": [
+                            "Opportunity area description"
+                        ]
+                    }}
+
+                    Make the insights realistic and relevant to {source_type or "the product"}.
+                    """
+
+                    # Get response from Gemini
+                    response = gemini_service.model.generate_content(prompt)
+                    response_text = response.text
+
+                    # Try to parse the JSON response
+                    try:
+                        # Extract JSON from the response if it's in a code block
+                        if "```json" in response_text:
+                            import re
+                            json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                response_text = json_match.group(1)
+                        elif "```" in response_text:
+                            import re
+                            json_match = re.search(r'```\s*(.*?)\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                response_text = json_match.group(1)
+
+                        # Parse the JSON
+                        gemini_insights = json.loads(response_text)
+                        logger.info("Successfully generated insights with Gemini API")
+                        return gemini_insights
+                    except Exception as json_error:
+                        logger.error(f"Error parsing Gemini response as JSON: {str(json_error)}")
+                        logger.error(f"Raw response: {response_text}")
+                else:
+                    logger.warning("Gemini API not available or circuit breaker open")
+            except Exception as gemini_error:
+                logger.error(f"Error using Gemini API: {str(gemini_error)}")
+
+            # Fall back to mock data if Gemini fails
+            logger.warning("Falling back to mock data")
             return _generate_meaningful_mock_insights(source_type)
 
         except Exception as e:
             logger.error(f"Error in insights generation process: {str(e)}")
+
+            # Try to use Gemini as a fallback
+            try:
+                if gemini_service.available and not gemini_service._check_circuit_breaker():
+                    logger.info("Attempting to use Gemini API as fallback after error")
+
+                    # Create a prompt for Gemini to generate insights
+                    prompt = f"""
+                    Generate comprehensive product insights for {source_type or "a product"}.
+
+                    Return the insights in the following JSON format:
+                    {{
+                        "high_priority_items": [
+                            {{
+                                "title": "Issue title",
+                                "description": "Detailed description",
+                                "priority_score": 0.85,  // Float between 0-1
+                                "category": "pain_point",  // One of: pain_point, feature_request
+                                "sentiment_score": 0.2,  // Float between 0-1
+                                "frequency": 12,  // Integer
+                                "examples": ["Example 1", "Example 2"]
+                            }}
+                        ],
+                        "trending_topics": [
+                            {{"name": "Topic name", "volume": 15}}  // Integer
+                        ],
+                        "sentiment_trends": {{
+                            "topic_name": 0.7  // Float between 0-1
+                        }},
+                        "action_items": [
+                            "Action item description"
+                        ],
+                        "risk_areas": [
+                            "Risk area description"
+                        ],
+                        "opportunity_areas": [
+                            "Opportunity area description"
+                        ]
+                    }}
+
+                    Make the insights realistic and relevant to {source_type or "the product"}.
+                    Include a note that these are AI-generated insights due to an error in the data processing.
+                    """
+
+                    # Get response from Gemini
+                    response = gemini_service.model.generate_content(prompt)
+                    response_text = response.text
+
+                    # Try to parse the JSON response
+                    try:
+                        # Extract JSON from the response if it's in a code block
+                        if "```json" in response_text:
+                            import re
+                            json_match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                response_text = json_match.group(1)
+                        elif "```" in response_text:
+                            import re
+                            json_match = re.search(r'```\s*(.*?)\s*```', response_text, re.DOTALL)
+                            if json_match:
+                                response_text = json_match.group(1)
+
+                        # Parse the JSON
+                        gemini_insights = json.loads(response_text)
+                        logger.info("Successfully generated fallback insights with Gemini API")
+                        return gemini_insights
+                    except Exception as json_error:
+                        logger.error(f"Error parsing Gemini fallback response as JSON: {str(json_error)}")
+            except Exception as gemini_error:
+                logger.error(f"Error using Gemini API for fallback: {str(gemini_error)}")
+
+            # If all else fails, use mock data
             return _generate_meaningful_mock_insights(source_type)
 
     except Exception as e:
@@ -303,7 +487,8 @@ def generate_weekly_summary(
                 insights_data = insights.model_dump()
             elif hasattr(insights, 'dict'):
                 # For backward compatibility with older Pydantic versions
-                insights_data = insights.dict()
+                logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+                insights_data = {k: getattr(insights, k) for k in insights.__dict__ if not k.startswith('_')}
             else:
                 insights_data = insights
         except Exception as insights_error:
@@ -431,7 +616,8 @@ def test_weekly_summary():
             summary_dict = test_summary.model_dump()
         else:
             # For backward compatibility with older Pydantic versions
-            summary_dict = test_summary.dict()
+            logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+            summary_dict = {k: getattr(test_summary, k) for k in test_summary.__dict__ if not k.startswith('_')}
         summary_dict["created_at"] = datetime.now(timezone.utc)
         result = collection.insert_one(summary_dict)
         summary_id = str(result.inserted_id)
@@ -471,13 +657,15 @@ def test_weekly_summary():
             retrieved_summary_dict = retrieved_summary.model_dump()
         else:
             # For backward compatibility with older Pydantic versions
-            retrieved_summary_dict = retrieved_summary.dict()
+            logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+            retrieved_summary_dict = {k: getattr(retrieved_summary, k) for k in retrieved_summary.__dict__ if not k.startswith('_')}
 
         if hasattr(insights, 'model_dump'):
             insights_dict = insights.model_dump()
         else:
             # For backward compatibility with older Pydantic versions
-            insights_dict = insights.dict()
+            logger.warning("Using deprecated dict() method. Consider upgrading Pydantic.")
+            insights_dict = {k: getattr(insights, k) for k in insights.__dict__ if not k.startswith('_')}
 
         return {
             "status": "success",

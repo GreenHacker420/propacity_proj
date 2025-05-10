@@ -6,8 +6,7 @@ export default defineConfig(({ mode }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '')
 
-  // Use BACKEND_URL from environment variables if available, otherwise use localhost
-  const backendUrl = env.BACKEND_URL || 'http://localhost:8000'
+  // Backend URL is now hardcoded to localhost:8000
 
   console.log(`Building for ${mode} mode with API URL: ${env.VITE_API_URL || '/api'}`)
 
@@ -24,9 +23,10 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       proxy: {
         '/api': {
-          target: backendUrl,
+          target: 'http://localhost:8000',
           changeOrigin: true,
           secure: false,
+          rewrite: (path) => path.replace(/^\/api/, ''),
           configure: (proxy, _options) => {
             proxy.on('error', (err, _req, _res) => {
               console.log('proxy error', err);
@@ -39,8 +39,26 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Add a specific proxy for direct Gemini calls (without /api prefix)
+        '/gemini': {
+          target: 'http://localhost:8000/api',
+          changeOrigin: true,
+          secure: false,
+          rewrite: (path) => path.replace(/^\/gemini/, '/gemini'),
+          configure: (proxy, _options) => {
+            proxy.on('error', (err, _req, _res) => {
+              console.log('gemini proxy error', err);
+            });
+            proxy.on('proxyReq', (_, req, _res) => {
+              console.log('Sending Gemini Request to the Target:', req.method, req.url);
+            });
+            proxy.on('proxyRes', (proxyRes, req, _res) => {
+              console.log('Received Gemini Response from the Target:', proxyRes.statusCode, req.url);
+            });
+          },
+        },
         '/ws': {
-          target: backendUrl,
+          target: 'http://localhost:8000',
           ws: true,
           changeOrigin: true,
           secure: false,

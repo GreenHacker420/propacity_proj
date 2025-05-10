@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
 import { ClockIcon } from '@heroicons/react/24/outline';
@@ -6,28 +5,11 @@ import LoadingIndicator from './LoadingIndicator';
 import APIStatusIndicator from './APIStatusIndicator';
 import APIQuotaDisplay from './APIQuotaDisplay';
 import GeminiStatusIndicator from './GeminiStatusIndicator';
-import api from '../services/api';
+import useGeminiStatus from '../hooks/useGeminiStatus';
 
 const ProcessingSteps = ({ steps, currentStep, apiStatus, onClearApiStatus }) => {
-  const [geminiStatus, setGeminiStatus] = useState(null);
-
-  // Fetch Gemini status when component mounts
-  useEffect(() => {
-    const fetchGeminiStatus = async () => {
-      try {
-        const status = await api.getGeminiStatus();
-        setGeminiStatus(status);
-      } catch (error) {
-        console.error('Error fetching Gemini status:', error);
-      }
-    };
-
-    fetchGeminiStatus();
-
-    // Refresh status every 10 seconds
-    const interval = setInterval(fetchGeminiStatus, 10000);
-    return () => clearInterval(interval);
-  }, []);
+  // Use the custom hook for Gemini status
+  const { status: geminiStatus } = useGeminiStatus();
 
   return (
     <div className="w-full max-w-md mx-auto">

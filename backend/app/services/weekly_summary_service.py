@@ -78,7 +78,7 @@ class WeeklySummaryService:
                     reviews_for_trends.append(review)
 
                 # Analyze sentiment - use synchronous call
-                sentiment_score = self.sentiment_analyzer.analyze_sentiment(review["text"])
+                sentiment_score = self.sentiment_analyzer.analyze_sentiment_sync(review["text"])
                 total_sentiment += sentiment_score
 
                 # Classify feedback - use synchronous call
@@ -250,7 +250,7 @@ class WeeklySummaryService:
                     continue
 
                 # Analyze sentiment - use synchronous call
-                sentiment_score = self.sentiment_analyzer.analyze_sentiment(text)
+                sentiment_score = self.sentiment_analyzer.analyze_sentiment_sync(text)
                 total_sentiment += sentiment_score
 
                 # Classify feedback - use synchronous call
@@ -467,7 +467,7 @@ class WeeklySummaryService:
                 try:
                     # Use find method with list() to get all results
                     cursor = self.collection.find(query)
-                    # Convert cursor to list
+                    # Convert cursor to list immediately to avoid 'to_list' attribute error
                     summaries = list(cursor)
                 except Exception as e:
                     logger.error(f"Error querying MongoDB: {str(e)}")

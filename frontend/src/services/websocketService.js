@@ -1,28 +1,5 @@
-// Mock WebSocket implementation for environments where WebSockets are not available
-const createMockWebSocket = () => {
-  console.log('Creating mock WebSocket - real WebSockets are disabled');
-  
-  // Create a mock socket object
-  const mockSocket = {
-    send: (data) => console.log('Mock WebSocket send:', data),
-    close: () => console.log('Mock WebSocket closed'),
-    onmessage: null,
-    onopen: null,
-    onclose: null,
-    onerror: null,
-    readyState: 1, // WebSocket.OPEN
-  };
-  
-  // Simulate connection open event
-  setTimeout(() => {
-    if (mockSocket.onopen) {
-      console.log('Mock WebSocket: Connection opened');
-      mockSocket.onopen({ type: 'open' });
-    }
-  }, 100);
-  
-  return mockSocket;
-};
+// Import environment configuration
+import environment from '../config/environment';
 
 // WebSocket connection management
 let socket = null;
@@ -34,15 +11,19 @@ const messageHandlers = [];
 // Initialize WebSocket connection
 export const initWebSocket = () => {
   try {
-    // Use mock WebSocket instead of real one
-    socket = createMockWebSocket();
-    
+    // Get WebSocket URL from environment
+    const wsUrl = environment.wsUrl;
+    console.log(`Connecting to WebSocket at: ${wsUrl}`);
+
+    // Create real WebSocket connection
+    socket = new WebSocket(wsUrl);
+
     // Set up event handlers
     socket.onopen = (event) => {
       console.log('WebSocket connection established');
       connectionStatus = true;
       reconnectAttempts = 0;
-      
+
       // Send a ping to keep the connection alive
       setInterval(() => {
         if (connectionStatus) {
@@ -54,12 +35,12 @@ export const initWebSocket = () => {
         }
       }, 30000); // Send ping every 30 seconds
     };
-    
+
     socket.onmessage = (event) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         console.log('WebSocket message received:', data);
-        
+
         // Handle different message types
         if (data.type === 'batch_progress') {
           // Update progress information
@@ -68,7 +49,7 @@ export const initWebSocket = () => {
         } else if (data.type === 'connection_established') {
           console.log('WebSocket connection confirmed by server');
         }
-        
+
         // Call all registered message handlers
         messageHandlers.forEach(handler => {
           try {
@@ -81,11 +62,11 @@ export const initWebSocket = () => {
         console.error('Error parsing WebSocket message:', error);
       }
     };
-    
+
     socket.onclose = (event) => {
       console.log('WebSocket connection closed');
       connectionStatus = false;
-      
+
       // Attempt to reconnect
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
@@ -95,11 +76,11 @@ export const initWebSocket = () => {
         console.log('Maximum reconnection attempts reached. WebSocket will remain disconnected.');
       }
     };
-    
+
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-    
+
     return socket;
   } catch (error) {
     console.error('Error initializing WebSocket:', error);
@@ -108,67 +89,10 @@ export const initWebSocket = () => {
 };
 
 // Initialize WebSocket when the service is loaded
-// Initialize WebSocket when the service is loaded
 let initializedSocket = null;
 try {
   initializedSocket = initWebSocket();
-  
-  // Simulate batch progress updates for testing
-  if (initializedSocket) {
-    console.log('Setting up mock progress updates simulation');
-    
-    // Wait a bit before starting the simulation
-    setTimeout(() => {
-      // Initial mock progress data
-      const mockProgressData = {
-        type: 'batch_progress',
-        current_batch: 1,
-        total_batches: 5,
-        batch_time: 2.3,
-        items_processed: 20,
-        total_items: 100,
-        avg_speed: 8.7,
-        estimated_time_remaining: 9.2,
-        progress_percentage: 20
-      };
-      
-      console.log('Sending first mock progress update:', mockProgressData);
-      
-      // Call all registered message handlers with the mock data
-      messageHandlers.forEach(handler => {
-        try {
-          handler(mockProgressData);
-        } catch (error) {
-          console.error('Error in message handler:', error);
-        }
-      });
-      
-      // Simulate more updates
-      const interval = setInterval(() => {
-        // Update the progress data
-        mockProgressData.items_processed += 20;
-        mockProgressData.progress_percentage += 20;
-        mockProgressData.estimated_time_remaining = Math.max(0, mockProgressData.estimated_time_remaining - 2);
-        
-        console.log('Sending mock progress update:', mockProgressData);
-        
-        // Call all registered message handlers with the updated mock data
-        messageHandlers.forEach(handler => {
-          try {
-            handler({...mockProgressData});
-          } catch (error) {
-            console.error('Error in message handler:', error);
-          }
-        });
-        
-        // Stop after reaching 100%
-        if (mockProgressData.progress_percentage >= 100) {
-          console.log('Mock progress updates complete');
-          clearInterval(interval);
-        }
-      }, 2000); // Update every 2 seconds
-    }, 3000); // Start after 3 seconds
-  }
+  console.log('WebSocket initialized:', initializedSocket ? 'success' : 'failed');
 } catch (error) {
   console.error('Failed to initialize WebSocket:', error);
 }

@@ -39,7 +39,16 @@ class SentimentAnalyzer:
 
     async def analyze_sentiment(self, text: str) -> float:
         """
-        Analyze the sentiment of the given text using Gemini API.
+        Analyze the sentiment of the given text using Gemini API (async version).
+        Returns a score between -1 (very negative) and 1 (very positive).
+        Falls back to local analysis if API is unavailable or rate limited.
+        """
+        # Use the synchronous version
+        return self.analyze_sentiment_sync(text)
+
+    def analyze_sentiment_sync(self, text: str) -> float:
+        """
+        Analyze the sentiment of the given text using Gemini API (synchronous version).
         Returns a score between -1 (very negative) and 1 (very positive).
         Falls back to local analysis if API is unavailable or rate limited.
         """
@@ -64,7 +73,7 @@ class SentimentAnalyzer:
                 Text: {text}
                 """
 
-                # Use synchronous call instead of async
+                # Use synchronous call
                 response = self.model.generate_content(prompt)
                 score = float(response.text.strip())
                 score = max(min(score, 1.0), -1.0)  # Ensure score is between -1 and 1
